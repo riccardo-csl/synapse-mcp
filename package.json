@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "smoke:broker": "node scripts/broker-smoke-test.mjs",
-    "smoke:mcp": "node scripts/mcp-client-smoke.mjs",
-    "test": "npm run smoke:broker && npm run smoke:mcp"
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "test:unit": "node --test \"test/unit/**/*.test.mjs\"",
+    "test:integration": "node --test \"test/integration/**/*.test.mjs\"",
+    "smoke:broker": "node --test test/integration/cycle-lifecycle.test.mjs",
+    "smoke:mcp": "node --test test/integration/mcp-transport.test.mjs"
   },
   "bin": {
     "mcp-broker": "./index.js"

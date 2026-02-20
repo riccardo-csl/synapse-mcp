@@ -43,8 +43,10 @@ If either PSK is missing, broker auth-sensitive operations fail with `CONFIG_INV
 - `lib/index.js` composition root
 - `lib/broker.js` compatibility re-export
 
-## Smoke Tests
+## Tests
 
-- `npm run smoke:broker` runs direct broker function checks.
-- `npm run smoke:mcp` runs MCP stdio client/server checks (structured error envelopes included).
-- `npm test` runs both.
+- `npm test` runs all tests under `test/` (unit + integration).
+- `npm run test:unit` runs domain unit tests (`fsm`, payload schema).
+- `npm run test:integration` runs broker and MCP integration flows.
+- `npm run smoke:broker` runs lifecycle integration only.
+- `npm run smoke:mcp` runs MCP transport integration only.
