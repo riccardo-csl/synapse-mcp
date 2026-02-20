@@ -1,0 +1,20 @@
+{
+  "name": "mcp-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke:broker": "node scripts/broker-smoke-test.mjs",
+    "smoke:mcp": "node scripts/mcp-client-smoke.mjs",
+    "test": "npm run smoke:broker && npm run smoke:mcp"
+  },
+  "bin": {
+    "mcp-broker": "./index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
