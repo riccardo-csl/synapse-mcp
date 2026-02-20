@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"test/**/*.test.mjs\"",
-    "test:unit": "node --test \"test/unit/**/*.test.mjs\"",
-    "test:integration": "node --test \"test/integration/**/*.test.mjs\"",
+    "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
+    "test:unit": "node --test test/unit/*.test.mjs",
+    "test:integration": "node --test test/integration/*.test.mjs",
     "smoke:broker": "node --test test/integration/cycle-lifecycle.test.mjs",
     "smoke:mcp": "node --test test/integration/mcp-transport.test.mjs"
   },
