@@ -14,7 +14,7 @@
   },
   "include": [
     "index.ts",
-    "cli.ts",
+    "runner.ts",
     "lib/**/*.ts",
     "test/**/*.ts"
   ],

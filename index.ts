@@ -10,7 +10,7 @@ import { executeTool } from "./lib/mcp/handlers.js";
 
 const server = new Server(
   {
-    name: "mcp-broker",
+    name: "synapse-mcp",
     version: "0.1.0"
   },
   {

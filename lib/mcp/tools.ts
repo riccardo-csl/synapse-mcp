@@ -1,94 +1,88 @@
 export const toolDefinitions = [
   {
-    name: "cycle.start",
-    description: "Start a new cycle and acquire the initial lock token.",
+    name: "synapse.orchestrate",
+    description: "Create a new orchestration cycle and queue phases.",
     inputSchema: {
       type: "object",
       properties: {
-        feature: { type: "string" },
-        mode: { type: "string" }
+        request: { type: "string" },
+        repo_root: { type: "string" },
+        constraints: {
+          type: "array",
+          items: { type: "string" }
+        },
+        plan: {
+          type: "object",
+          properties: {
+            phases: {
+              type: "array",
+              items: { type: "string", enum: ["FRONTEND", "BACKEND", "FRONTEND_TWEAK"] }
+            },
+            allow_gemini_for_backend: { type: "boolean" }
+          }
+        }
       },
-      required: ["feature"]
+      required: ["request"]
     }
   },
   {
-    name: "cycle.status",
-    description: "Return current cycle status and lock state.",
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "handoff.read",
-    description: "Read a handoff payload.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        target: { type: "string", enum: ["codex", "gemini"] }
-      },
-      required: ["target"]
-    }
-  },
-  {
-    name: "session.open",
-    description: "Open a role-bound session with PSK credentials.",
+    name: "synapse.status",
+    description: "Read status for a cycle.",
     inputSchema: {
       type: "object",
       properties: {
-        role: { type: "string", enum: ["codex", "gemini"] },
-        psk: { type: "string" }
+        cycle_id: { type: "string" },
+        repo_root: { type: "string" }
       },
-      required: ["role", "psk"]
+      required: ["cycle_id"]
     }
   },
   {
-    name: "lock.acquire",
-    description: "Acquire the active role lock token for the current cycle.",
+    name: "synapse.logs",
+    description: "Read cycle logs, optionally tailed.",
     inputSchema: {
       type: "object",
       properties: {
-        session_token: { type: "string" }
+        cycle_id: { type: "string" },
+        tail: { type: "number" },
+        repo_root: { type: "string" }
       },
-      required: ["session_token"]
+      required: ["cycle_id"]
     }
   },
   {
-    name: "handoff.write",
-    description: "Write a handoff payload with lock validation.",
+    name: "synapse.cancel",
+    description: "Cancel a running/queued cycle.",
     inputSchema: {
       type: "object",
       properties: {
-        target: { type: "string", enum: ["codex", "gemini"] },
-        payload: { type: "object" },
-        lock_token: { type: "string" },
-        session_token: { type: "string" }
+        cycle_id: { type: "string" },
+        reason: { type: "string" },
+        repo_root: { type: "string" }
       },
-      required: ["target", "payload", "lock_token", "session_token"]
+      required: ["cycle_id"]
     }
   },
   {
-    name: "cycle.complete",
-    description: "Mark the cycle complete (frontend_refine only).",
+    name: "synapse.list",
+    description: "List recent cycles.",
     inputSchema: {
       type: "object",
       properties: {
-        lock_token: { type: "string" },
-        session_token: { type: "string" }
-      },
-      required: ["lock_token", "session_token"]
+        limit: { type: "number" },
+        status: { type: "string", enum: ["QUEUED", "RUNNING", "DONE", "FAILED", "CANCELED"] },
+        repo_root: { type: "string" }
+      }
     }
   },
   {
-    name: "cycle.archive",
-    description: "Archive the completed cycle and reset state.",
+    name: "synapse.render_prompt",
+    description: "Render a user-facing snippet that tells Codex to use Synapse orchestration.",
     inputSchema: {
       type: "object",
       properties: {
-        lock_token: { type: "string" },
-        session_token: { type: "string" }
-      },
-      required: ["lock_token", "session_token"]
+        request: { type: "string" }
+      }
     }
   }
 ];

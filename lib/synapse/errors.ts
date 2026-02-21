@@ -1,14 +1,14 @@
-export interface BrokerError extends Error {
+export interface SynapseError extends Error {
   code: string;
   details: Record<string, unknown>;
 }
 
-export function brokerError(
+export function synapseError(
   code: string,
   message: string,
   details: Record<string, unknown> = {}
-): BrokerError {
-  const err = new Error(message) as BrokerError;
+): SynapseError {
+  const err = new Error(message) as SynapseError;
   err.code = code;
   err.details = details;
   return err;

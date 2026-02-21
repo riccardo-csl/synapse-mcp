@@ -1,19 +1,21 @@
 {
-  "name": "mcp-broker",
+  "name": "synapse-mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "test": "npm run build && node --test dist/test/unit/*.test.js dist/test/integration/*.test.js",
-    "test:unit": "npm run build && node --test dist/test/unit/*.test.js",
-    "test:integration": "npm run build && node --test dist/test/integration/*.test.js",
-    "smoke:broker": "npm run build && node --test dist/test/integration/cycle-lifecycle.test.js",
-    "smoke:mcp": "npm run build && node --test dist/test/integration/mcp-transport.test.js"
+    "test": "npm run clean && npm run build && node --test dist/test/unit/*.test.js dist/test/integration/*.test.js",
+    "test:unit": "npm run clean && npm run build && node --test dist/test/unit/*.test.js",
+    "test:integration": "npm run clean && npm run build && node --test dist/test/integration/*.test.js",
+    "mcp:start": "npm run clean && npm run build && node dist/index.js",
+    "runner:start": "npm run clean && npm run build && node dist/runner.js start",
+    "runner:doctor": "npm run clean && npm run build && node dist/runner.js doctor"
   },
   "bin": {
-    "mcp-broker": "./dist/index.js"
+    "synapse-mcp": "./dist/index.js",
+    "synapse-runner": "./dist/runner.js"
   },
   "engines": {
     "node": ">=18"

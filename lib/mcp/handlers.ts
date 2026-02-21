@@ -1,26 +1,22 @@
 import {
-  cycleArchive,
-  cycleComplete,
-  cycleStart,
-  cycleStatus,
-  handoffRead,
-  handoffWrite,
-  lockAcquire,
-  sessionOpen
-} from "../index.js";
+  synapseCancel,
+  synapseList,
+  synapseLogs,
+  synapseOrchestrate,
+  synapseRenderPrompt,
+  synapseStatus
+} from "../synapse/service.js";
 
-const TOOL_HANDLERS = {
-  "cycle.start": cycleStart,
-  "cycle.status": () => cycleStatus(),
-  "handoff.read": handoffRead,
-  "session.open": sessionOpen,
-  "lock.acquire": lockAcquire,
-  "handoff.write": handoffWrite,
-  "cycle.complete": cycleComplete,
-  "cycle.archive": cycleArchive
+const TOOL_HANDLERS: Record<string, (args: any) => Promise<any>> = {
+  "synapse.orchestrate": synapseOrchestrate,
+  "synapse.status": synapseStatus,
+  "synapse.logs": synapseLogs,
+  "synapse.cancel": synapseCancel,
+  "synapse.list": synapseList,
+  "synapse.render_prompt": synapseRenderPrompt
 };
 
-export async function executeTool(name, args = {}) {
+export async function executeTool(name: string, args: Record<string, unknown> = {}) {
   const fn = TOOL_HANDLERS[name];
   if (!fn) {
     return {
@@ -36,13 +32,13 @@ export async function executeTool(name, args = {}) {
   try {
     const data = await fn(args);
     return { ok: true, data };
-  } catch (err) {
+  } catch (err: any) {
     return {
       ok: false,
       error: {
-        code: err.code || "INTERNAL_ERROR",
-        message: err.message || "Unknown error",
-        details: err.details || {}
+        code: err?.code || "INTERNAL_ERROR",
+        message: err?.message || "Unknown error",
+        details: err?.details || {}
       }
     };
   }

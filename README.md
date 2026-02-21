@@ -1,57 +1,145 @@
-# MCP Broker (Gemini/Codex)
+# synapse-mcp
 
-## Configure PSKs
+Local MCP orchestrator for multi-agent workflows (Gemini frontend + Codex backend).
 
-Set role credentials in `.mcp-broker/config.json`:
+## What It Does
+
+`synapse-mcp` provides:
+
+1. An MCP stdio server with orchestration tools.
+2. A local runner that executes cycle phases and updates persisted state.
+
+Default phase flow:
+
+1. `FRONTEND` (Gemini adapter)
+2. `BACKEND` (Codex adapter via `codex exec`)
+3. `FRONTEND_TWEAK` (Gemini adapter, skipped unless backend signals it)
+
+## MCP Tools
+
+- `synapse.orchestrate`
+- `synapse.status`
+- `synapse.logs`
+- `synapse.cancel`
+- `synapse.list`
+- `synapse.render_prompt`
+
+All tool responses are wrapped as:
+
+- success: `{ "ok": true, "data": ... }`
+- error: `{ "ok": false, "error": { "code", "message", "details" } }`
+
+## Storage
+
+Repo-local state under `.synapse/`:
+
+- `.synapse/config.json`
+- `.synapse/cycles/<cycle_id>.json`
+- `.synapse/locks/<cycle_id>.lock`
+
+Writes are atomic (`tmp -> rename`).
+
+## Setup
+
+```bash
+npm install
+npm run build
+```
+
+## Run MCP Server
+
+```bash
+npm run mcp:start
+# or
+node dist/index.js
+```
+
+## Run Runner
+
+```bash
+npm run runner:doctor
+node dist/runner.js start --poll-ms=500
+node dist/runner.js start --once
+node dist/runner.js run <cycle_id>
+```
+
+Runner commands:
+
+- `synapse-runner start [--once] [--poll-ms=500] [--repo-root=/path]`
+- `synapse-runner run <cycle_id> [--repo-root=/path]`
+- `synapse-runner doctor [--repo-root=/path]`
+
+## Config
+
+Runner config is `.synapse/config.json`.
+
+On first run, defaults are created:
 
 ```json
 {
-  "version": "0.1",
-  "mode": "approval",
-  "validation": "basic",
-  "storage_path": ".mcp-broker",
-  "agents": {
-    "gemini": { "psk": "GEMINI_SECRET" },
-    "codex": { "psk": "CODEX_SECRET" }
-  }
+  "storage_dir": ".synapse",
+  "checks": {
+    "FRONTEND": [],
+    "BACKEND": [],
+    "FRONTEND_TWEAK": []
+  },
+  "require_changes": {
+    "FRONTEND": false,
+    "BACKEND": true,
+    "FRONTEND_TWEAK": false
+  },
+  "adapters": {
+    "gemini": {
+      "mode": "stub",
+      "command": "gemini"
+    },
+    "codexExec": {
+      "command": "codex exec"
+    }
+  },
+  "denylist_substrings": [
+    "rm -rf /",
+    "git reset --hard",
+    "git clean -fdx"
+  ]
 }
 ```
 
-If either PSK is missing, broker auth-sensitive operations fail with `CONFIG_INVALID`.
+Notes:
 
-## Agent Flow
+- Set `adapters.gemini.mode` to `cli` to execute Gemini CLI.
+- Backend adapter runs `${adapters.codexExec.command} "<prompt>"`.
 
-1. Open role session: `session.open({ role, psk })` -> `session_token`
-2. Active role acquires lock: `lock.acquire({ session_token })` -> `lock_token`
-3. Write handoff: `handoff.write({ target, payload, lock_token, session_token })`
-4. Complete cycle (Gemini in `frontend_refine`): `cycle.complete({ lock_token, session_token })`
-5. Archive cycle (Gemini in `complete`): `cycle.archive({ lock_token, session_token })`
+## Codex MCP Config Example
 
-## Security Notes
+Add to `.codex/config.toml`:
 
-- `handoff.write` never returns lock tokens.
-- `cycle.status` never includes lock token.
-- Session role is enforced for `lock.acquire`, `handoff.write`, `cycle.complete`, and `cycle.archive`.
-- Session state is persisted in `.mcp-broker/sessions.json`.
+```toml
+[mcp_servers.synapse]
+command = "node"
+args = ["/absolute/path/to/repo/dist/index.js"]
+```
 
-## Internal Module Layout
+## Usage Pattern (Opt-In)
 
-- `lib/core/` shared primitives (constants, errors, ids, guards, validators)
-- `lib/storage/` atomic file I/O, path mapping, and state stores
-- `lib/domains/config|session|lock|cycle|handoff/` domain logic and state machine rules
-- `lib/mcp/` tool definitions and MCP dispatch helpers
-- `lib/index.ts` composition root
-- `lib/broker.ts` compatibility re-export
+Use orchestration only when explicitly requested in your prompt:
 
-## Build
+- "Implement the frontend for feature X, **use synapse-mcp**"
 
-- `npm run build` compiles TypeScript sources to `dist/`.
-- Runtime entrypoint is `dist/index.js`.
+If you do not include that instruction, use normal direct coding flow.
 
 ## Tests
 
-- `npm test` runs all tests under `test/` (unit + integration).
-- `npm run test:unit` runs domain unit tests (`fsm`, payload schema).
-- `npm run test:integration` runs broker and MCP integration flows.
-- `npm run smoke:broker` runs lifecycle integration only.
-- `npm run smoke:mcp` runs MCP transport integration only.
+```bash
+npm test
+npm run test:unit
+npm run test:integration
+```
+
+## Current MVP Notes
+
+- Gemini adapter supports `stub` mode and `cli` mode.
+- In `cli` mode, Gemini must output JSON containing either:
+  - `patch` (unified diff), or
+  - `file_ops` (`write`/`delete` operations),
+  plus an optional `report` object.
