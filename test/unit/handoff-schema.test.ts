@@ -39,17 +39,17 @@ test("validatePayload rejects producer mismatch", () => {
 
   assert.throws(
     () => validatePayload(payload, "codex", state),
-    (err) => err.code === "SCHEMA_INVALID" && /producer/.test(err.message)
+    (err: any) => err.code === "SCHEMA_INVALID" && /producer/.test(err.message)
   );
 });
 
 test("validatePayload rejects malformed endpoint entries", () => {
   const payload = basePayload();
-  payload.endpoints = [{ method: "GET" }];
+  payload.endpoints = [{ method: "GET" } as any];
 
   assert.throws(
     () => validatePayload(payload, "codex", state),
-    (err) => err.code === "SCHEMA_INVALID"
+    (err: any) => err.code === "SCHEMA_INVALID"
   );
 });
 
@@ -59,6 +59,6 @@ test("validatePayload rejects cycle mismatch", () => {
 
   assert.throws(
     () => validatePayload(payload, "codex", state),
-    (err) => err.code === "SCHEMA_INVALID" && /cycle_id/.test(err.message)
+    (err: any) => err.code === "SCHEMA_INVALID" && /cycle_id/.test(err.message)
   );
 });

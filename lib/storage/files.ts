@@ -1,5 +1,5 @@
-import path from "path";
-import { promises as fs } from "fs";
+import * as path from "node:path";
+import { promises as fs } from "node:fs";
 
 export async function ensureDir(dirPath) {
   await fs.mkdir(dirPath, { recursive: true });

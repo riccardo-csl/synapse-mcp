@@ -1,4 +1,4 @@
-import path from "path";
+import * as path from "node:path";
 import { ensureDir } from "./files.js";
 
 export async function ensureStorage(baseDir) {

@@ -4,10 +4,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 
-import { callTool, createMcpClient } from "../helpers/mcp-client.mjs";
-import { GEMINI_PSK } from "../helpers/broker-fixtures.mjs";
+import { callTool, createMcpClient } from "../helpers/mcp-client.js";
+import { GEMINI_PSK } from "../helpers/broker-fixtures.js";
 
-const serverPath = path.resolve(process.cwd(), "index.js");
+const serverPath = path.resolve(process.cwd(), "dist/index.js");
 
 async function writeBrokerConfig(rootDir) {
   const storageDir = path.join(rootDir, ".mcp-broker");

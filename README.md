@@ -40,8 +40,13 @@ If either PSK is missing, broker auth-sensitive operations fail with `CONFIG_INV
 - `lib/storage/` atomic file I/O, path mapping, and state stores
 - `lib/domains/config|session|lock|cycle|handoff/` domain logic and state machine rules
 - `lib/mcp/` tool definitions and MCP dispatch helpers
-- `lib/index.js` composition root
-- `lib/broker.js` compatibility re-export
+- `lib/index.ts` composition root
+- `lib/broker.ts` compatibility re-export
+
+## Build
+
+- `npm run build` compiles TypeScript sources to `dist/`.
+- Runtime entrypoint is `dist/index.js`.
 
 ## Tests
 

@@ -15,7 +15,7 @@ import {
   writeConfig,
   GEMINI_PSK,
   CODEX_PSK
-} from "../helpers/broker-fixtures.mjs";
+} from "../helpers/broker-fixtures.js";
 
 test("session auth, spoofing prevention, and lock gating", async () => {
   const baseDir = await createSandbox("mcp-broker-auth-flow-");
@@ -31,7 +31,7 @@ test("session auth, spoofing prevention, and lock gating", async () => {
 
     await assert.rejects(
       () => lockAcquire({ session_token: codexSession.session_token }, baseDir),
-      (err) => err.code === "LOCK_DENIED"
+      (err: any) => err.code === "LOCK_DENIED"
     );
 
     const writeResult = await handoffWrite(
@@ -54,7 +54,7 @@ test("session auth, spoofing prevention, and lock gating", async () => {
 
     await assert.rejects(
       () => lockAcquire({ session_token: geminiSession.session_token }, baseDir),
-      (err) => err.code === "LOCK_DENIED"
+      (err: any) => err.code === "LOCK_DENIED"
     );
 
     const codexLock = await lockAcquire({ session_token: codexSession.session_token }, baseDir);
@@ -75,7 +75,7 @@ test("session auth, spoofing prevention, and lock gating", async () => {
           },
           baseDir
         ),
-      (err) => err.code === "LOCK_DENIED"
+      (err: any) => err.code === "LOCK_DENIED"
     );
 
     await assert.rejects(
@@ -93,7 +93,7 @@ test("session auth, spoofing prevention, and lock gating", async () => {
           },
           baseDir
         ),
-      (err) => err.code === "LOCK_DENIED"
+      (err: any) => err.code === "LOCK_DENIED"
     );
   } finally {
     await cleanupSandbox(baseDir);
@@ -106,7 +106,7 @@ test("session.open rejects wrong credentials", async () => {
     await writeConfig(baseDir);
     await assert.rejects(
       () => sessionOpen({ role: "gemini", psk: "WRONG" }, baseDir),
-      (err) => err.code === "AUTH_FAILED"
+      (err: any) => err.code === "AUTH_FAILED"
     );
   } finally {
     await cleanupSandbox(baseDir);

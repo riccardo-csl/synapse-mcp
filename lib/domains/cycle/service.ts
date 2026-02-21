@@ -1,4 +1,4 @@
-import path from "path";
+import * as path from "node:path";
 import {
   PHASE_COMPLETE,
   PHASE_FRONTEND,

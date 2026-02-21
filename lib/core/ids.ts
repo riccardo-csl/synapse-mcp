@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import { randomBytes } from "node:crypto";
 
 export function slugifyFeature(feature) {
   return feature
@@ -8,9 +8,9 @@ export function slugifyFeature(feature) {
 }
 
 export function randomToken() {
-  return crypto.randomBytes(24).toString("hex");
+  return randomBytes(24).toString("hex");
 }
 
 export function randomSessionToken() {
-  return `sess_${crypto.randomBytes(24).toString("hex")}`;
+  return `sess_${randomBytes(24).toString("hex")}`;
 }

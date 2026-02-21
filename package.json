@@ -4,19 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
-    "test:unit": "node --test test/unit/*.test.mjs",
-    "test:integration": "node --test test/integration/*.test.mjs",
-    "smoke:broker": "node --test test/integration/cycle-lifecycle.test.mjs",
-    "smoke:mcp": "node --test test/integration/mcp-transport.test.mjs"
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "test": "npm run build && node --test dist/test/unit/*.test.js dist/test/integration/*.test.js",
+    "test:unit": "npm run build && node --test dist/test/unit/*.test.js",
+    "test:integration": "npm run build && node --test dist/test/integration/*.test.js",
+    "smoke:broker": "npm run build && node --test dist/test/integration/cycle-lifecycle.test.js",
+    "smoke:mcp": "npm run build && node --test dist/test/integration/mcp-transport.test.js"
   },
   "bin": {
-    "mcp-broker": "./index.js"
+    "mcp-broker": "./dist/index.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.7.3"
   }
 }

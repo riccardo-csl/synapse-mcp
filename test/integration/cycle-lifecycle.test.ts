@@ -21,7 +21,7 @@ import {
   writeConfig,
   GEMINI_PSK,
   CODEX_PSK
-} from "../helpers/broker-fixtures.mjs";
+} from "../helpers/broker-fixtures.js";
 
 test("full cycle lifecycle supports rework loop and archive continuity", async () => {
   const baseDir = await createSandbox("mcp-broker-lifecycle-");
@@ -142,7 +142,7 @@ test("archive is rejected before completion", async () => {
           },
           baseDir
         ),
-      (err) => err.code === "ARCHIVE_NOT_ALLOWED"
+      (err: any) => err.code === "ARCHIVE_NOT_ALLOWED"
     );
   } finally {
     await cleanupSandbox(baseDir);
