@@ -76,6 +76,7 @@ export function createCycleSpec(input: Required<Pick<OrchestrateInput, "request"
   const phases = buildPhases(input.phases);
 
   return {
+    schema_version: 1,
     id,
     created_at: createdAt,
     updated_at: createdAt,
@@ -88,7 +89,9 @@ export function createCycleSpec(input: Required<Pick<OrchestrateInput, "request"
     artifacts: {
       changed_files: [],
       commands_run: [],
-      test_results: []
+      test_results: [],
+      phase_durations_ms: {},
+      attempt_history: []
     },
     logs: [
       {
@@ -132,7 +135,22 @@ export function nextPendingPhaseIndex(cycle: CycleSpec): number | null {
   return null;
 }
 
-export function claimCurrentPhase(cycle: CycleSpec, runnerId: string): { phaseIndex: number; claimToken: string } | null {
+function isStalePhaseClaim(phase: PhaseSpec, reclaimStaleMs: number): boolean {
+  if (reclaimStaleMs <= 0) {
+    return false;
+  }
+  const ts = phase.started_at ? Date.parse(phase.started_at) : NaN;
+  if (Number.isFinite(ts)) {
+    return Date.now() - ts > reclaimStaleMs;
+  }
+  return phase.status === "CLAIMED";
+}
+
+export function claimCurrentPhase(
+  cycle: CycleSpec,
+  runnerId: string,
+  options: { reclaim_stale_ms?: number } = {}
+): { phaseIndex: number; claimToken: string } | null {
   if (isTerminal(cycle.status)) {
     return null;
   }
@@ -146,6 +164,17 @@ export function claimCurrentPhase(cycle: CycleSpec, runnerId: string): { phaseIn
   }
 
   const phase = cycle.phases[idx];
+  if (
+    (phase.status === "CLAIMED" || phase.status === "RUNNING")
+    && isStalePhaseClaim(phase, options.reclaim_stale_ms || 0)
+  ) {
+    phase.status = "PENDING";
+    phase.claim_token = null;
+    phase.claimed_by = null;
+    phase.started_at = null;
+    addLog(cycle, "INFO", "Reclaimed stale phase claim", { phase_id: phase.id }, phase.id);
+  }
+
   if (phase.status !== "PENDING") {
     return null;
   }
@@ -247,7 +276,8 @@ export function markPhaseFailed(
   cycle: CycleSpec,
   phaseIndex: number,
   claimToken: string,
-  error: { code: string; message: string; details?: Record<string, unknown> }
+  error: { code: string; message: string; details?: Record<string, unknown> },
+  options: { forceTerminal?: boolean } = {}
 ): void {
   const phase = cycle.phases[phaseIndex];
   if (!phase) {
@@ -260,7 +290,9 @@ export function markPhaseFailed(
   phase.claim_token = null;
   phase.claimed_by = null;
 
-  if (phase.attempt_count < phase.max_attempts) {
+  const forceTerminal = options.forceTerminal === true;
+
+  if (!forceTerminal && phase.attempt_count < phase.max_attempts) {
     phase.status = "PENDING";
     phase.finished_at = null;
     cycle.status = "RUNNING";

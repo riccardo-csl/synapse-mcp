@@ -11,7 +11,8 @@
     "test:integration": "npm run clean && npm run build && node --test dist/test/integration/*.test.js",
     "mcp:start": "npm run clean && npm run build && node dist/index.js",
     "runner:start": "npm run clean && npm run build && node dist/runner.js start",
-    "runner:doctor": "npm run clean && npm run build && node dist/runner.js doctor"
+    "runner:doctor": "npm run clean && npm run build && node dist/runner.js doctor",
+    "runner:health": "npm run clean && npm run build && node dist/runner.js health"
   },
   "bin": {
     "synapse-mcp": "./dist/index.js",
@@ -21,7 +22,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

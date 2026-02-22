@@ -7,13 +7,15 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  canceled: boolean;
 }
 
 export async function runShellCommand(
   command: string,
   cwd: string,
   timeoutMs: number,
-  denylist: string[]
+  denylist: string[],
+  options: { signal?: AbortSignal } = {}
 ): Promise<CommandResult> {
   for (const denied of denylist) {
     if (denied && command.includes(denied)) {
@@ -31,18 +33,49 @@ export async function runShellCommand(
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const timer = setTimeout(() => {
+    const abortSignal = options.signal;
+
+    const onAbort = () => {
       if (settled) {
         return;
       }
       settled = true;
+      clearTimeout(timer);
       child.kill("SIGKILL");
       resolve({
         command,
         code: null,
         stdout,
         stderr,
-        timedOut: true
+        timedOut: false,
+        canceled: true
+      });
+    };
+
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        onAbort();
+        return;
+      }
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
+      child.kill("SIGKILL");
+      resolve({
+        command,
+        code: null,
+        stdout,
+        stderr,
+        timedOut: true,
+        canceled: false
       });
     }, timeoutMs);
 
@@ -58,6 +91,9 @@ export async function runShellCommand(
         return;
       }
       settled = true;
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
       clearTimeout(timer);
       reject(err);
     });
@@ -67,13 +103,17 @@ export async function runShellCommand(
         return;
       }
       settled = true;
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
       clearTimeout(timer);
       resolve({
         command,
         code,
         stdout,
         stderr,
-        timedOut: false
+        timedOut: false,
+        canceled: false
       });
     });
   });

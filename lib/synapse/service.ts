@@ -4,48 +4,35 @@ import { synapseError } from "./errors.js";
 import {
   cancelCycle,
   createCycleSpec,
-  summarizePhases,
-  validatePlanPhases
+  summarizePhases
 } from "./stateMachine.js";
 import { listCycles, readCycle, writeCycle } from "./store.js";
-import type { CycleStatus, OrchestrateInput } from "./types.js";
+import {
+  cancelInputSchema,
+  cancelOutputSchema,
+  listInputSchema,
+  listOutputSchema,
+  logsInputSchema,
+  logsOutputSchema,
+  orchestrateInputSchema,
+  orchestrateOutputSchema,
+  parseOrSchemaError,
+  renderPromptInputSchema,
+  renderPromptOutputSchema,
+  statusInputSchema,
+  statusOutputSchema
+} from "./schemas.js";
 
 function resolveRepoRoot(repoRoot?: string): string {
   return path.resolve(repoRoot || process.cwd());
 }
 
-function ensureString(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw synapseError("SCHEMA_INVALID", `${label} must be a non-empty string`, { label });
-  }
-  return value.trim();
-}
-
-function ensureStringArray(value: unknown, label: string): string[] {
-  if (typeof value === "undefined") {
-    return [];
-  }
-  if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
-    throw synapseError("SCHEMA_INVALID", `${label} must be an array of strings`, { label });
-  }
-  return value;
-}
-
-function ensureOptionalStatus(value: unknown): CycleStatus | undefined {
-  if (typeof value === "undefined") {
-    return undefined;
-  }
-  if (value !== "QUEUED" && value !== "RUNNING" && value !== "DONE" && value !== "FAILED" && value !== "CANCELED") {
-    throw synapseError("SCHEMA_INVALID", "status must be a valid CycleStatus");
-  }
-  return value;
-}
-
-export async function synapseOrchestrate(args: Partial<OrchestrateInput> = {}) {
-  const request = ensureString(args.request, "request");
-  const repo_root = resolveRepoRoot(args.repo_root);
-  const constraints = ensureStringArray(args.constraints, "constraints");
-  const phases = validatePlanPhases(args.plan?.phases);
+export async function synapseOrchestrate(args: unknown = {}) {
+  const input = parseOrSchemaError(orchestrateInputSchema, args, "Invalid synapse.orchestrate input");
+  const request = input.request.trim();
+  const repo_root = resolveRepoRoot(input.repo_root);
+  const constraints = input.constraints || [];
+  const phases = input.plan?.phases;
 
   const cycle = createCycleSpec({
     request,
@@ -56,19 +43,20 @@ export async function synapseOrchestrate(args: Partial<OrchestrateInput> = {}) {
 
   await writeCycle(repo_root, cycle);
 
-  return {
+  return parseOrSchemaError(orchestrateOutputSchema, {
     cycle_id: cycle.id,
     status: cycle.status,
     phases: summarizePhases(cycle.phases)
-  };
+  }, "Invalid synapse.orchestrate output");
 }
 
-export async function synapseStatus(args: { cycle_id?: string; repo_root?: string } = {}) {
-  const cycle_id = ensureString(args.cycle_id, "cycle_id");
-  const repo_root = resolveRepoRoot(args.repo_root);
+export async function synapseStatus(args: unknown = {}) {
+  const input = parseOrSchemaError(statusInputSchema, args, "Invalid synapse.status input");
+  const cycle_id = input.cycle_id;
+  const repo_root = resolveRepoRoot(input.repo_root);
   const cycle = await readCycle(repo_root, cycle_id);
 
-  return {
+  return parseOrSchemaError(statusOutputSchema, {
     cycle_id: cycle.id,
     status: cycle.status,
     current_phase_index: cycle.current_phase_index,
@@ -80,45 +68,48 @@ export async function synapseStatus(args: { cycle_id?: string; repo_root?: strin
     repo_root: cycle.repo_root,
     request: cycle.request_text,
     artifacts: cycle.artifacts
-  };
+  }, "Invalid synapse.status output");
 }
 
-export async function synapseLogs(args: { cycle_id?: string; tail?: number; repo_root?: string } = {}) {
-  const cycle_id = ensureString(args.cycle_id, "cycle_id");
-  const repo_root = resolveRepoRoot(args.repo_root);
+export async function synapseLogs(args: unknown = {}) {
+  const input = parseOrSchemaError(logsInputSchema, args, "Invalid synapse.logs input");
+  const cycle_id = input.cycle_id;
+  const repo_root = resolveRepoRoot(input.repo_root);
   const cycle = await readCycle(repo_root, cycle_id);
 
-  const tail = typeof args.tail === "number" && args.tail > 0 ? Math.floor(args.tail) : null;
+  const tail = typeof input.tail === "number" && input.tail > 0 ? Math.floor(input.tail) : null;
   const entries = tail ? cycle.logs.slice(-tail) : cycle.logs;
 
-  return {
+  return parseOrSchemaError(logsOutputSchema, {
     cycle_id: cycle.id,
     entries
-  };
+  }, "Invalid synapse.logs output");
 }
 
-export async function synapseCancel(args: { cycle_id?: string; reason?: string; repo_root?: string } = {}) {
-  const cycle_id = ensureString(args.cycle_id, "cycle_id");
-  const repo_root = resolveRepoRoot(args.repo_root);
+export async function synapseCancel(args: unknown = {}) {
+  const input = parseOrSchemaError(cancelInputSchema, args, "Invalid synapse.cancel input");
+  const cycle_id = input.cycle_id;
+  const repo_root = resolveRepoRoot(input.repo_root);
   const cycle = await readCycle(repo_root, cycle_id);
 
-  cancelCycle(cycle, typeof args.reason === "string" ? args.reason : undefined);
+  cancelCycle(cycle, input.reason);
   cycle.updated_at = nowIso();
   await writeCycle(repo_root, cycle);
 
-  return {
+  return parseOrSchemaError(cancelOutputSchema, {
     cycle_id: cycle.id,
     status: cycle.status
-  };
+  }, "Invalid synapse.cancel output");
 }
 
-export async function synapseList(args: { limit?: number; status?: CycleStatus; repo_root?: string } = {}) {
-  const repo_root = resolveRepoRoot(args.repo_root);
-  const status = ensureOptionalStatus(args.status);
-  const limit = typeof args.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : 20;
+export async function synapseList(args: unknown = {}) {
+  const input = parseOrSchemaError(listInputSchema, args, "Invalid synapse.list input");
+  const repo_root = resolveRepoRoot(input.repo_root);
+  const status = input.status;
+  const limit = typeof input.limit === "number" && input.limit > 0 ? Math.floor(input.limit) : 20;
   const cycles = await listCycles(repo_root, { limit, status });
 
-  return {
+  return parseOrSchemaError(listOutputSchema, {
     cycles: cycles.map((cycle) => ({
       id: cycle.id,
       status: cycle.status,
@@ -128,15 +119,16 @@ export async function synapseList(args: { limit?: number; status?: CycleStatus; 
       request_text: cycle.request_text,
       repo_root: cycle.repo_root
     }))
-  };
+  }, "Invalid synapse.list output");
 }
 
-export async function synapseRenderPrompt(args: { request?: string } = {}) {
-  const request = typeof args.request === "string" && args.request.trim()
-    ? args.request.trim()
+export async function synapseRenderPrompt(args: unknown = {}) {
+  const input = parseOrSchemaError(renderPromptInputSchema, args, "Invalid synapse.render_prompt input");
+  const request = typeof input.request === "string" && input.request.trim()
+    ? input.request.trim()
     : "Implement the frontend for feature X";
 
-  return {
+  return parseOrSchemaError(renderPromptOutputSchema, {
     snippet: `${request}. Use synapse-mcp orchestration: call synapse.orchestrate with this request and follow synapse.status until DONE/FAILED.`
-  };
+  }, "Invalid synapse.render_prompt output");
 }

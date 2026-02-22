@@ -34,9 +34,19 @@ export interface CycleArtifacts {
   changed_files: string[];
   commands_run: string[];
   test_results: Array<{ command: string; ok: boolean; code: number | null; stdout_tail: string; stderr_tail: string }>;
+  phase_durations_ms: Record<string, number>;
+  attempt_history: Array<{
+    phase_id: string;
+    attempt: number;
+    started_at: string | null;
+    finished_at: string | null;
+    outcome: "DONE" | "FAILED" | "RETRY";
+    error_code?: string;
+  }>;
 }
 
 export interface CycleSpec {
+  schema_version: number;
   id: string;
   created_at: string;
   updated_at: string;
@@ -81,6 +91,7 @@ export interface CycleSummary {
 }
 
 export interface RunnerConfig {
+  schema_version: number;
   storage_dir: string;
   checks: {
     FRONTEND: string[];
@@ -101,7 +112,23 @@ export interface RunnerConfig {
       command: string;
     };
   };
+  locks: {
+    ttl_ms: number;
+    heartbeat_ms: number;
+    takeover_grace_ms: number;
+  };
   denylist_substrings: string[];
+}
+
+export interface CycleLockState {
+  schema_version: number;
+  lock_version: 1;
+  cycle_id: string;
+  owner_id: string;
+  pid: number;
+  created_at: string;
+  heartbeat_at: string;
+  expires_at: string;
 }
 
 export interface PhaseExecutionResult {

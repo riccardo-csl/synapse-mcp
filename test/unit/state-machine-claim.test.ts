@@ -70,3 +70,24 @@ test("backend completion skips frontend_tweak when not required", () => {
   assert.equal(cycle.phases[1].status, "SKIPPED");
   assert.equal(cycle.status, "DONE");
 });
+
+test("claimCurrentPhase reclaims stale running phase", () => {
+  const cycle = createCycleSpec({
+    request: "recover",
+    repo_root: "/tmp/repo",
+    constraints: [],
+    phases: ["BACKEND"]
+  });
+
+  cycle.status = "RUNNING";
+  cycle.current_phase_index = 0;
+  cycle.phases[0].status = "RUNNING";
+  cycle.phases[0].claim_token = "dead";
+  cycle.phases[0].claimed_by = "runner-old";
+  cycle.phases[0].started_at = new Date(Date.now() - 120_000).toISOString();
+
+  const claim = claimCurrentPhase(cycle, "runner-new", { reclaim_stale_ms: 1_000 });
+  assert.ok(claim);
+  assert.equal(cycle.phases[0].status, "CLAIMED");
+  assert.equal(cycle.phases[0].claimed_by, "runner-new");
+});

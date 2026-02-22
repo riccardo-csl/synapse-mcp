@@ -68,6 +68,7 @@ Runner commands:
 - `synapse-runner start [--once] [--poll-ms=500] [--repo-root=/path]`
 - `synapse-runner run <cycle_id> [--repo-root=/path]`
 - `synapse-runner doctor [--repo-root=/path]`
+- `synapse-runner health [--repo-root=/path]`
 
 ## Config
 
@@ -77,6 +78,7 @@ On first run, defaults are created:
 
 ```json
 {
+  "schema_version": 1,
   "storage_dir": ".synapse",
   "checks": {
     "FRONTEND": [],
@@ -97,6 +99,11 @@ On first run, defaults are created:
       "command": "codex exec"
     }
   },
+  "locks": {
+    "ttl_ms": 20000,
+    "heartbeat_ms": 5000,
+    "takeover_grace_ms": 2000
+  },
   "denylist_substrings": [
     "rm -rf /",
     "git reset --hard",
@@ -109,6 +116,16 @@ Notes:
 
 - Set `adapters.gemini.mode` to `cli` to execute Gemini CLI.
 - Backend adapter runs `${adapters.codexExec.command} "<prompt>"`.
+- Lock behavior:
+  - runner acquires per-cycle lock before claim/transition writes
+  - runner now keeps the lock lease during full phase execution (adapter + checks + finalize)
+  - lock heartbeat extends lock while a phase is running
+  - stale locks are automatically taken over after `expires_at + takeover_grace_ms`
+  - stale in-memory phase claims (`CLAIMED`/`RUNNING`) are reclaimed automatically before re-execution
+- Persisted cycle/config/lock payloads are schema-validated (zod) before use.
+- `schema_version` is enforced for persisted files:
+  - newer unsupported versions return `UNSUPPORTED_VERSION`
+  - malformed/incompatible payloads return `*_CORRUPT` or `CONFIG_INVALID`
 
 ## Codex MCP Config Example
 
@@ -143,3 +160,13 @@ npm run test:integration
   - `patch` (unified diff), or
   - `file_ops` (`write`/`delete` operations),
   plus an optional `report` object.
+- Gemini patch flow now runs `git apply --check` before `git apply`.
+- Gemini parser prefers `SYNAPSE_RESULT_JSON: {...}` when present; otherwise it selects the last schema-valid JSON object from stdout.
+- Codex backend adapter supports an optional structured trailer:
+  - `SYNAPSE_RESULT_JSON: {"frontend_tweak_required":true,"report":{...}}`
+- Cycle artifacts include per-phase duration and attempt history for diagnostics.
+- Retry policy is code-driven:
+  - retryable: `PHASE_TIMEOUT`, `LOCK_HELD`, `CHECK_FAILED`, `ADAPTER_FAILED`
+  - terminal (no retry): `SCHEMA_INVALID`, `ADAPTER_OUTPUT_PARSE_FAILED`, `ADAPTER_OUTPUT_INVALID`, `PATCH_INVALID`, `PATCH_APPLY_FAILED`, `REPO_BOUNDARY`, `COMMAND_BLOCKED`, `CONFIG_INVALID`, `CYCLE_CORRUPT`
+- Cancellation:
+  - `synapse.cancel` during a running phase triggers in-flight process abort (`SIGKILL`) and keeps cycle state `CANCELED`.

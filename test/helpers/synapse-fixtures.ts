@@ -27,6 +27,7 @@ export async function writeSynapseConfig(
   const synapseDir = path.join(repoRoot, ".synapse");
   await fs.mkdir(synapseDir, { recursive: true });
   const config = {
+    schema_version: 1,
     storage_dir: ".synapse",
     checks: {
       FRONTEND: [],
@@ -47,6 +48,11 @@ export async function writeSynapseConfig(
         command: "node -e \"require('fs').writeFileSync('backend.txt','ok')\""
       }
     },
+    locks: {
+      ttl_ms: 20000,
+      heartbeat_ms: 5000,
+      takeover_grace_ms: 2000
+    },
     denylist_substrings: ["rm -rf /", "git reset --hard", "git clean -fdx"]
   } as Record<string, unknown>;
 
@@ -64,6 +70,10 @@ export async function writeSynapseConfig(
     require_changes: {
       ...(config.require_changes as Record<string, unknown>),
       ...((configPatch.require_changes as Record<string, unknown>) || {})
+    },
+    locks: {
+      ...(config.locks as Record<string, unknown>),
+      ...((configPatch.locks as Record<string, unknown>) || {})
     }
   };
 

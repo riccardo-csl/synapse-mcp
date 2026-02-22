@@ -13,3 +13,10 @@ export function synapseError(
   err.details = details;
   return err;
 }
+
+export function schemaError(
+  message: string,
+  issues: Array<Record<string, unknown>> = []
+): SynapseError {
+  return synapseError("SCHEMA_INVALID", message, { issues });
+}

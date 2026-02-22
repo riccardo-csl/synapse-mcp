@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { doctor, runCycle, startRunner } from "./lib/runner/index.js";
+import { doctor, health, runCycle, startRunner } from "./lib/runner/index.js";
 
 function parseFlag(args: string[], name: string): string | undefined {
   const full = `--${name}=`;
@@ -36,11 +36,19 @@ async function main() {
     return;
   }
 
+  if (command === "health") {
+    const repoRoot = parseFlag(rest, "repo-root");
+    const report = await health(repoRoot);
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
   throw new Error(
     "Usage:\n"
       + "  synapse-runner start [--once] [--poll-ms=500] [--repo-root=/path]\n"
       + "  synapse-runner run <cycle_id> [--repo-root=/path]\n"
-      + "  synapse-runner doctor [--repo-root=/path]"
+      + "  synapse-runner doctor [--repo-root=/path]\n"
+      + "  synapse-runner health [--repo-root=/path]"
   );
 }
 
