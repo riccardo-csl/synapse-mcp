@@ -7,7 +7,7 @@ import {
   synapseRenderPrompt,
   synapseStatus
 } from "./synapse/service.js";
-import { startRunner, runCycle, doctor, health } from "./runner/index.js";
+import { startRunner, runCycle, doctor, health, migrate, report } from "./runner/index.js";
 
 export { toolDefinitions };
 
@@ -21,5 +21,7 @@ export {
   startRunner,
   runCycle,
   doctor,
-  health
+  health,
+  migrate,
+  report
 };

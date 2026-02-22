@@ -107,15 +107,21 @@ export interface RunnerConfig {
     gemini: {
       mode: "stub" | "cli";
       command: string;
+      require_marker: boolean;
     };
     codexExec: {
       command: string;
+      require_marker: boolean;
     };
   };
   locks: {
     ttl_ms: number;
     heartbeat_ms: number;
     takeover_grace_ms: number;
+    pid_liveness_check: boolean;
+  };
+  cancellation: {
+    term_grace_ms: number;
   };
   denylist_substrings: string[];
 }

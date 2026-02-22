@@ -7,10 +7,18 @@ function inferFrontendTweakRequired(stdout: string): boolean {
   return /frontend_tweak_required\s*[:=]\s*true/i.test(stdout);
 }
 
-function parseStructuredResult(stdout: string): { frontend_tweak_required?: boolean; report?: Record<string, unknown> } | null {
+function parseStructuredResult(
+  stdout: string,
+  requireMarker: boolean
+): { frontend_tweak_required?: boolean; report?: Record<string, unknown> } | null {
   const marker = "SYNAPSE_RESULT_JSON:";
   const idx = stdout.lastIndexOf(marker);
   if (idx < 0) {
+    if (requireMarker) {
+      throw synapseError("ADAPTER_OUTPUT_PARSE_FAILED", "Codex output missing required structured marker", {
+        marker
+      });
+    }
     return null;
   }
 
@@ -50,18 +58,24 @@ export async function runCodexBackendPhase(
   config: RunnerConfig,
   signal?: AbortSignal
 ): Promise<PhaseExecutionResult> {
+  const requireMarker = config.adapters.codexExec.require_marker;
   const prompt = [
     "You are executing a Synapse BACKEND phase.",
     `Request: ${cycle.request_text}`,
     `Constraints: ${(cycle.constraints || []).join("; ") || "none"}`,
     "Update backend implementation to satisfy frontend contract.",
     "If backend changes require frontend updates, print: frontend_tweak_required=true",
-    "Optional structured output: print one final line only:",
+    requireMarker
+      ? "Final output line is REQUIRED in this exact format:"
+      : "Optional structured output: print one final line only:",
     "SYNAPSE_RESULT_JSON: {\"frontend_tweak_required\": true|false, \"report\": {...}}"
   ].join("\n");
 
   const command = `${config.adapters.codexExec.command} ${JSON.stringify(prompt)}`;
-  const result = await runShellCommand(command, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, { signal });
+  const result = await runShellCommand(command, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, {
+    signal,
+    termGraceMs: config.cancellation.term_grace_ms
+  });
   if (result.canceled) {
     throw synapseError("PHASE_CANCELED", "Codex backend phase canceled", { phase_id: phase.id });
   }
@@ -79,7 +93,7 @@ export async function runCodexBackendPhase(
     });
   }
 
-  const structured = parseStructuredResult(result.stdout);
+  const structured = parseStructuredResult(result.stdout, requireMarker);
 
   return {
     report: {

@@ -42,16 +42,22 @@ export async function writeSynapseConfig(
     adapters: {
       gemini: {
         mode: "stub",
-        command: "gemini"
+        command: "gemini",
+        require_marker: false
       },
       codexExec: {
-        command: "node -e \"require('fs').writeFileSync('backend.txt','ok')\""
+        command: "node -e \"require('fs').writeFileSync('backend.txt','ok')\"",
+        require_marker: false
       }
     },
     locks: {
       ttl_ms: 20000,
       heartbeat_ms: 5000,
-      takeover_grace_ms: 2000
+      takeover_grace_ms: 2000,
+      pid_liveness_check: true
+    },
+    cancellation: {
+      term_grace_ms: 1500
     },
     denylist_substrings: ["rm -rf /", "git reset --hard", "git clean -fdx"]
   } as Record<string, unknown>;
@@ -74,6 +80,10 @@ export async function writeSynapseConfig(
     locks: {
       ...(config.locks as Record<string, unknown>),
       ...((configPatch.locks as Record<string, unknown>) || {})
+    },
+    cancellation: {
+      ...(config.cancellation as Record<string, unknown>),
+      ...((configPatch.cancellation as Record<string, unknown>) || {})
     }
   };
 

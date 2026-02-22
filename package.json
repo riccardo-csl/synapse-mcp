@@ -9,10 +9,12 @@
     "test": "npm run clean && npm run build && node --test dist/test/unit/*.test.js dist/test/integration/*.test.js",
     "test:unit": "npm run clean && npm run build && node --test dist/test/unit/*.test.js",
     "test:integration": "npm run clean && npm run build && node --test dist/test/integration/*.test.js",
+    "test:e2e": "npm run clean && npm run build && node --test dist/test/e2e/*.test.js",
     "mcp:start": "npm run clean && npm run build && node dist/index.js",
     "runner:start": "npm run clean && npm run build && node dist/runner.js start",
     "runner:doctor": "npm run clean && npm run build && node dist/runner.js doctor",
-    "runner:health": "npm run clean && npm run build && node dist/runner.js health"
+    "runner:health": "npm run clean && npm run build && node dist/runner.js health",
+    "runner:migrate": "npm run clean && npm run build && node dist/runner.js migrate --dry-run"
   },
   "bin": {
     "synapse-mcp": "./dist/index.js",

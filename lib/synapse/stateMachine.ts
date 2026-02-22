@@ -172,7 +172,10 @@ export function claimCurrentPhase(
     phase.claim_token = null;
     phase.claimed_by = null;
     phase.started_at = null;
-    addLog(cycle, "INFO", "Reclaimed stale phase claim", { phase_id: phase.id }, phase.id);
+    addLog(cycle, "INFO", "Reclaimed stale phase claim", {
+      event: "phase.reclaimed",
+      phase_id: phase.id
+    }, phase.id);
   }
 
   if (phase.status !== "PENDING") {
@@ -186,7 +189,10 @@ export function claimCurrentPhase(
   cycle.status = "RUNNING";
   cycle.current_phase_index = idx;
   cycle.updated_at = nowIso();
-  addLog(cycle, "INFO", `Phase claimed: ${phase.type}`, undefined, phase.id);
+  addLog(cycle, "INFO", `Phase claimed: ${phase.type}`, {
+    event: "phase.claimed",
+    phase_type: phase.type
+  }, phase.id);
 
   return { phaseIndex: idx, claimToken };
 }
@@ -207,7 +213,10 @@ export function markClaimedPhaseRunning(cycle: CycleSpec, phaseIndex: number, cl
   phase.started_at = nowIso();
   phase.attempt_count += 1;
   cycle.updated_at = nowIso();
-  addLog(cycle, "INFO", `Phase running: ${phase.type}`, { attempt: phase.attempt_count }, phase.id);
+  addLog(cycle, "INFO", `Phase running: ${phase.type}`, {
+    event: "phase.running",
+    attempt: phase.attempt_count
+  }, phase.id);
 }
 
 function maybeSkipFrontendTweak(cycle: CycleSpec, backendResult: PhaseExecutionResult | null): void {
@@ -265,10 +274,15 @@ export function markPhaseDone(
 
   if (nextIdx === null) {
     cycle.status = "DONE";
-    addLog(cycle, "INFO", "Cycle completed successfully", undefined, phase.id);
+    addLog(cycle, "INFO", "Cycle completed successfully", {
+      event: "cycle.completed"
+    }, phase.id);
   } else {
     cycle.status = "RUNNING";
-    addLog(cycle, "INFO", `Phase done: ${phase.type}`, undefined, phase.id);
+    addLog(cycle, "INFO", `Phase done: ${phase.type}`, {
+      event: "phase.done",
+      phase_type: phase.type
+    }, phase.id);
   }
 }
 
@@ -298,14 +312,20 @@ export function markPhaseFailed(
     cycle.status = "RUNNING";
     cycle.current_phase_index = phaseIndex;
     cycle.last_error = error;
-    addLog(cycle, "ERROR", `Phase failed; retrying (${phase.attempt_count}/${phase.max_attempts})`, error.details, phase.id);
+    addLog(cycle, "ERROR", `Phase failed; retrying (${phase.attempt_count}/${phase.max_attempts})`, {
+      ...(error.details || {}),
+      event: "phase.retrying"
+    }, phase.id);
   } else {
     phase.status = "FAILED";
     phase.finished_at = nowIso();
     cycle.status = "FAILED";
     cycle.current_phase_index = null;
     cycle.last_error = error;
-    addLog(cycle, "ERROR", `Phase failed permanently: ${error.message}`, error.details, phase.id);
+    addLog(cycle, "ERROR", `Phase failed permanently: ${error.message}`, {
+      ...(error.details || {}),
+      event: "phase.failed"
+    }, phase.id);
   }
 
   cycle.updated_at = nowIso();
@@ -319,7 +339,10 @@ export function cancelCycle(cycle: CycleSpec, reason?: string): void {
   cycle.current_phase_index = null;
   cycle.canceled_reason = reason || null;
   cycle.updated_at = nowIso();
-  addLog(cycle, "INFO", "Cycle canceled", reason ? { reason } : undefined);
+  addLog(cycle, "INFO", "Cycle canceled", {
+    event: "cycle.canceled",
+    ...(reason ? { reason } : {})
+  });
 }
 
 export function validatePlanPhases(phases: unknown): PhaseType[] | undefined {

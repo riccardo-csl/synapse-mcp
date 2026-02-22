@@ -25,16 +25,22 @@ function baseConfig(command: string): RunnerConfig {
     adapters: {
       gemini: {
         mode: "cli",
-        command
+        command,
+        require_marker: false
       },
       codexExec: {
-        command: "codex exec"
+        command: "codex exec",
+        require_marker: false
       }
     },
     locks: {
       ttl_ms: 20000,
       heartbeat_ms: 5000,
-      takeover_grace_ms: 2000
+      takeover_grace_ms: 2000,
+      pid_liveness_check: true
+    },
+    cancellation: {
+      term_grace_ms: 1500
     },
     denylist_substrings: []
   };

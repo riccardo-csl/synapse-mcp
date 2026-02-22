@@ -56,6 +56,8 @@ Config knobs:
 - `locks.ttl_ms`
 - `locks.heartbeat_ms`
 - `locks.takeover_grace_ms`
+- `locks.pid_liveness_check` (skip stale takeover when PID still appears alive)
+- `cancellation.term_grace_ms` (`SIGTERM` grace before `SIGKILL`)
 
 ## Retry/Failure Behavior
 
@@ -104,8 +106,10 @@ Commands:
 - `synapse-runner doctor`
 - `synapse-runner health`
 
-`doctor` reports dependency availability (`codex`, `gemini`), storage paths, cycle counts, and lock config.
+`doctor` reports dependency availability (`codex`, `gemini`), storage paths, cycle counts, lock config, adapter strict-marker mode, and schema migration status.
 `health` reports process/runtime info for supervision checks.
+`report <cycle_id>` returns a cycle summary with phase attempts, artifacts counters, and extracted event log.
+`migrate [--dry-run]` scans `.synapse` files, reports schema drift, and can rewrite older files to current `schema_version`.
 
 ## Retry Policy
 
@@ -133,5 +137,5 @@ Terminal phase failures (no retry):
 Runner polls cycle status during adapter/check execution.
 
 - When cycle becomes `CANCELED`, runner aborts active child process.
-- Child processes are terminated with `SIGKILL`.
+- Runner sends `SIGTERM`, then escalates to `SIGKILL` after `cancellation.term_grace_ms`.
 - Phase is not advanced to `DONE`; cycle remains `CANCELED`.

@@ -9,7 +9,7 @@ import { cycleLockSchema, cycleSpecSchema, parseOrSchemaError, runnerConfigSchem
 
 const LOCK_WAIT_MS = 5_000;
 const LOCK_POLL_MS = 50;
-const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 1;
 
 export const DEFAULT_STORAGE_DIR = ".synapse";
 
@@ -29,16 +29,22 @@ export const DEFAULT_RUNNER_CONFIG: RunnerConfig = {
   adapters: {
     gemini: {
       mode: "stub",
-      command: "gemini"
+      command: "gemini",
+      require_marker: false
     },
     codexExec: {
-      command: "codex exec"
+      command: "codex exec",
+      require_marker: false
     }
   },
   locks: {
     ttl_ms: 20_000,
     heartbeat_ms: 5_000,
-    takeover_grace_ms: 2_000
+    takeover_grace_ms: 2_000,
+    pid_liveness_check: true
+  },
+  cancellation: {
+    term_grace_ms: 1_500
   },
   denylist_substrings: ["rm -rf /", "git reset --hard", "git clean -fdx"]
 };
@@ -163,6 +169,10 @@ function mergeRunnerConfig(current: unknown): RunnerConfig {
     locks: {
       ...DEFAULT_RUNNER_CONFIG.locks,
       ...(source.locks || {})
+    },
+    cancellation: {
+      ...DEFAULT_RUNNER_CONFIG.cancellation,
+      ...(source.cancellation || {})
     },
     denylist_substrings: Array.isArray(source.denylist_substrings)
       ? source.denylist_substrings
@@ -311,6 +321,24 @@ function isStale(lock: CycleLockState, takeoverGraceMs: number): boolean {
   return Date.now() > expiresAt + takeoverGraceMs;
 }
 
+function isPidLikelyAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: any) {
+    if (err?.code === "EPERM") {
+      return true;
+    }
+    if (err?.code === "ESRCH") {
+      return false;
+    }
+    return false;
+  }
+}
+
 async function acquireNewLock(lockPath: string, state: CycleLockState): Promise<boolean> {
   let handle: fs.FileHandle | null = null;
   try {
@@ -417,9 +445,13 @@ export async function withCycleLock<T>(
       throw err;
     }
     if (existing && isStale(existing, config.takeover_grace_ms)) {
+      if (config.pid_liveness_check && isPidLikelyAlive(existing.pid)) {
+        // Process still appears alive; avoid false stale takeovers due clock skew/sleep.
+      } else {
       const stolen = await stealStaleLock(lockPath, cycleId);
       if (stolen) {
         continue;
+      }
       }
     }
 

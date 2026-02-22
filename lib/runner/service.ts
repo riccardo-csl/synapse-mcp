@@ -98,7 +98,10 @@ async function runPhaseChecks(
   const results: Array<{ command: string; ok: boolean; code: number | null; stdout_tail: string; stderr_tail: string }> = [];
 
   for (const cmd of checks) {
-    const result = await runShellCommand(cmd, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, { signal });
+    const result = await runShellCommand(cmd, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, {
+      signal,
+      termGraceMs: config.cancellation.term_grace_ms
+    });
     if (result.canceled) {
       throw synapseError("PHASE_CANCELED", "Phase checks canceled", { phase_id: phase.id, command: cmd });
     }
@@ -281,6 +284,10 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
         (cycle.artifacts.phase_durations_ms[claimed.phase_id] || 0) + phaseDurationMs;
 
       if (shape.code === "PHASE_CANCELED") {
+        addLog(cycle, "INFO", "Phase execution canceled", {
+          event: "phase.canceled",
+          phase_id: claimed.phase_id
+        }, claimed.phase_id);
         if (phase && phase.claim_token === claimed.claim_token) {
           phase.status = "FAILED";
           phase.finished_at = nowIso();

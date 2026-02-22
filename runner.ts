@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { doctor, health, runCycle, startRunner } from "./lib/runner/index.js";
+import { doctor, health, migrate, report, runCycle, startRunner } from "./lib/runner/index.js";
 
 function parseFlag(args: string[], name: string): string | undefined {
   const full = `--${name}=`;
@@ -43,12 +43,33 @@ async function main() {
     return;
   }
 
+  if (command === "migrate") {
+    const repoRoot = parseFlag(rest, "repo-root");
+    const dryRun = rest.includes("--dry-run");
+    const result = await migrate(repoRoot, dryRun);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === "report") {
+    const cycleId = rest[0];
+    if (!cycleId) {
+      throw new Error("Usage: synapse-runner report <cycle_id> [--repo-root=/path]");
+    }
+    const repoRoot = parseFlag(rest.slice(1), "repo-root");
+    const result = await report(cycleId, repoRoot);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   throw new Error(
     "Usage:\n"
       + "  synapse-runner start [--once] [--poll-ms=500] [--repo-root=/path]\n"
       + "  synapse-runner run <cycle_id> [--repo-root=/path]\n"
       + "  synapse-runner doctor [--repo-root=/path]\n"
-      + "  synapse-runner health [--repo-root=/path]"
+      + "  synapse-runner health [--repo-root=/path]\n"
+      + "  synapse-runner migrate [--dry-run] [--repo-root=/path]\n"
+      + "  synapse-runner report <cycle_id> [--repo-root=/path]"
   );
 }
 

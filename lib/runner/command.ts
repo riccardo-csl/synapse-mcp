@@ -10,12 +10,17 @@ export interface CommandResult {
   canceled: boolean;
 }
 
+export interface RunShellOptions {
+  signal?: AbortSignal;
+  termGraceMs?: number;
+}
+
 export async function runShellCommand(
   command: string,
   cwd: string,
   timeoutMs: number,
   denylist: string[],
-  options: { signal?: AbortSignal } = {}
+  options: RunShellOptions = {}
 ): Promise<CommandResult> {
   for (const denied of denylist) {
     if (denied && command.includes(denied)) {
@@ -33,29 +38,64 @@ export async function runShellCommand(
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let canceled = false;
     const abortSignal = options.signal;
+    const termGraceMs = typeof options.termGraceMs === "number" && options.termGraceMs >= 0
+      ? options.termGraceMs
+      : 1500;
+
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const settle = (result: CommandResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
+      clearTimeout(timer);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
+      resolve(result);
+    };
 
     const onAbort = () => {
       if (settled) {
         return;
       }
-      settled = true;
-      clearTimeout(timer);
-      child.kill("SIGKILL");
-      resolve({
-        command,
-        code: null,
-        stdout,
-        stderr,
-        timedOut: false,
-        canceled: true
-      });
+      canceled = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // noop
+      }
+
+      if (termGraceMs === 0) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // noop
+        }
+        return;
+      }
+
+      killTimer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // noop
+        }
+      }, termGraceMs);
     };
 
     if (abortSignal) {
       if (abortSignal.aborted) {
         onAbort();
-        return;
       }
       abortSignal.addEventListener("abort", onAbort, { once: true });
     }
@@ -64,12 +104,12 @@ export async function runShellCommand(
       if (settled) {
         return;
       }
-      settled = true;
-      if (abortSignal) {
-        abortSignal.removeEventListener("abort", onAbort);
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // noop
       }
-      child.kill("SIGKILL");
-      resolve({
+      settle({
         command,
         code: null,
         stdout,
@@ -95,25 +135,20 @@ export async function runShellCommand(
         abortSignal.removeEventListener("abort", onAbort);
       }
       clearTimeout(timer);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
       reject(err);
     });
 
     child.on("close", (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (abortSignal) {
-        abortSignal.removeEventListener("abort", onAbort);
-      }
-      clearTimeout(timer);
-      resolve({
+      settle({
         command,
         code,
         stdout,
         stderr,
         timedOut: false,
-        canceled: false
+        canceled
       });
     });
   });

@@ -1,0 +1,32 @@
+name: Optional E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      e2e_codex_cmd:
+        description: "Backend command for e2e (example: codex exec)"
+        required: false
+        type: string
+
+jobs:
+  e2e:
+    name: E2E (manual)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run optional e2e tests
+        env:
+          E2E: "1"
+          E2E_CODEX_CMD: ${{ inputs.e2e_codex_cmd }}
+        run: npm run test:e2e

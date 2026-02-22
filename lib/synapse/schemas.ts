@@ -92,16 +92,22 @@ export const runnerConfigSchema = z.object({
   adapters: z.object({
     gemini: z.object({
       mode: z.enum(["stub", "cli"]),
-      command: z.string().min(1)
+      command: z.string().min(1),
+      require_marker: z.boolean().default(false)
     }).strict(),
     codexExec: z.object({
-      command: z.string().min(1)
+      command: z.string().min(1),
+      require_marker: z.boolean().default(false)
     }).strict()
   }).strict(),
   locks: z.object({
     ttl_ms: z.number().int().positive(),
     heartbeat_ms: z.number().int().positive(),
-    takeover_grace_ms: z.number().int().nonnegative()
+    takeover_grace_ms: z.number().int().nonnegative(),
+    pid_liveness_check: z.boolean().default(true)
+  }).strict(),
+  cancellation: z.object({
+    term_grace_ms: z.number().int().nonnegative().default(1500)
   }).strict(),
   denylist_substrings: z.array(z.string())
 }).strict();

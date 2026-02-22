@@ -100,7 +100,13 @@ async function applyPatch(repoRoot: string, patch: string, config: RunnerConfig)
   const patchPath = path.join(synapseTmpDir, `gemini-${Date.now()}.patch`);
   await fs.writeFile(patchPath, patch, "utf8");
 
-  const checkResult = await runShellCommand(`git apply --check ${JSON.stringify(patchPath)}`, repoRoot, 30_000, config.denylist_substrings);
+  const checkResult = await runShellCommand(
+    `git apply --check ${JSON.stringify(patchPath)}`,
+    repoRoot,
+    30_000,
+    config.denylist_substrings,
+    { termGraceMs: config.cancellation.term_grace_ms }
+  );
   if (checkResult.code !== 0 || checkResult.timedOut) {
     throw synapseError("PATCH_INVALID", "Gemini patch failed git apply --check", {
       stdout: tail(checkResult.stdout),
@@ -108,7 +114,13 @@ async function applyPatch(repoRoot: string, patch: string, config: RunnerConfig)
     });
   }
 
-  const applyResult = await runShellCommand(`git apply ${JSON.stringify(patchPath)}`, repoRoot, 30_000, config.denylist_substrings);
+  const applyResult = await runShellCommand(
+    `git apply ${JSON.stringify(patchPath)}`,
+    repoRoot,
+    30_000,
+    config.denylist_substrings,
+    { termGraceMs: config.cancellation.term_grace_ms }
+  );
   if (applyResult.code !== 0 || applyResult.timedOut) {
     throw synapseError("PATCH_APPLY_FAILED", "Failed to apply Gemini patch", {
       stdout: tail(applyResult.stdout),
@@ -117,7 +129,7 @@ async function applyPatch(repoRoot: string, patch: string, config: RunnerConfig)
   }
 }
 
-function parseGeminiOutput(stdout: string): GeminiStructuredOutput {
+function parseGeminiOutput(stdout: string, requireMarker: boolean): GeminiStructuredOutput {
   const markerIdx = stdout.lastIndexOf(RESULT_MARKER);
   let candidates: string[] = [];
 
@@ -130,6 +142,12 @@ function parseGeminiOutput(stdout: string): GeminiStructuredOutput {
     }
     candidates = [markerPayload];
   } else {
+    if (requireMarker) {
+      throw synapseError("ADAPTER_OUTPUT_PARSE_FAILED", "Gemini output missing required structured marker", {
+        marker: RESULT_MARKER
+      });
+    }
+
     candidates = extractJsonObjects(stdout);
     if (candidates.length === 0) {
       throw synapseError("ADAPTER_OUTPUT_PARSE_FAILED", "Gemini output does not contain a JSON object", {
@@ -197,11 +215,14 @@ export async function runGeminiPhase(
     };
   }
 
+  const requireMarker = config.adapters.gemini.require_marker;
   const prompt = [
     `You are executing synapse phase ${phase.type}.`,
     `Request: ${cycle.request_text}`,
     `Constraints: ${(cycle.constraints || []).join("; ") || "none"}`,
-    "Return ONLY JSON with exactly one content mode.",
+    requireMarker
+      ? "Return ONLY the final line in this exact format: SYNAPSE_RESULT_JSON: { ... }"
+      : "Return ONLY JSON with exactly one content mode.",
     "If you include any additional logs, the FINAL line must be:",
     "SYNAPSE_RESULT_JSON: { ... }",
     "1) {\"patch\":\"...unified diff...\",\"report\":{...},\"frontend_tweak_required\":false}",
@@ -209,7 +230,10 @@ export async function runGeminiPhase(
   ].join("\n");
 
   const command = `${config.adapters.gemini.command} ${JSON.stringify(prompt)}`;
-  const result = await runShellCommand(command, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, { signal });
+  const result = await runShellCommand(command, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, {
+    signal,
+    termGraceMs: config.cancellation.term_grace_ms
+  });
   if (result.canceled) {
     throw synapseError("PHASE_CANCELED", "Gemini phase canceled", { phase_id: phase.id });
   }
@@ -225,7 +249,7 @@ export async function runGeminiPhase(
     });
   }
 
-  const parsed = parseGeminiOutput(result.stdout);
+  const parsed = parseGeminiOutput(result.stdout, requireMarker);
 
   if (parsed.file_ops) {
     await applyFileOps(cycle.repo_root, parsed.file_ops);

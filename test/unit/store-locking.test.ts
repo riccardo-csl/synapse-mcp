@@ -17,7 +17,8 @@ test("withCycleLock denies concurrent holder with LOCK_HELD", async () => {
           lockConfig: {
             ttl_ms: 5_000,
             heartbeat_ms: 1_000,
-            takeover_grace_ms: 5_000
+            takeover_grace_ms: 5_000,
+            pid_liveness_check: true
           }
         }),
         (err: any) => err?.code === "LOCK_HELD"
@@ -27,7 +28,8 @@ test("withCycleLock denies concurrent holder with LOCK_HELD", async () => {
       lockConfig: {
         ttl_ms: 5_000,
         heartbeat_ms: 50,
-        takeover_grace_ms: 5_000
+        takeover_grace_ms: 5_000,
+        pid_liveness_check: true
       }
     });
   } finally {
@@ -58,11 +60,47 @@ test("withCycleLock takes over stale lock", async () => {
       lockConfig: {
         ttl_ms: 1_000,
         heartbeat_ms: 25,
-        takeover_grace_ms: 0
+        takeover_grace_ms: 0,
+        pid_liveness_check: false
       }
     });
 
     assert.equal(result, "ok");
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("withCycleLock does not steal stale lock when PID is still alive", async () => {
+  const repoRoot = await createTempRepo("synapse-lock-live-pid-");
+  try {
+    const paths = await ensureSynapseStore(repoRoot);
+    const lockPath = path.join(paths.locksDir, "cycle-live.lock");
+    const staleButAlive = {
+      schema_version: 1,
+      lock_version: 1,
+      cycle_id: "cycle-live",
+      owner_id: "other-runner",
+      pid: process.pid,
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+      heartbeat_at: new Date(Date.now() - 60_000).toISOString(),
+      expires_at: new Date(Date.now() - 30_000).toISOString()
+    };
+    await fs.writeFile(lockPath, JSON.stringify(staleButAlive, null, 2) + "\n", "utf8");
+
+    await assert.rejects(
+      () => withCycleLock(repoRoot, "cycle-live", async () => "should-not-happen", {
+        ownerId: "runner-new",
+        acquire_timeout_ms: 150,
+        lockConfig: {
+          ttl_ms: 1_000,
+          heartbeat_ms: 25,
+          takeover_grace_ms: 0,
+          pid_liveness_check: true
+        }
+      }),
+      (err: any) => err?.code === "LOCK_HELD"
+    );
   } finally {
     await cleanupDir(repoRoot);
   }
@@ -81,7 +119,8 @@ test("withCycleLock quarantines corrupt lock and recovers", async () => {
       lockConfig: {
         ttl_ms: 1_000,
         heartbeat_ms: 25,
-        takeover_grace_ms: 0
+        takeover_grace_ms: 0,
+        pid_liveness_check: true
       }
     });
 

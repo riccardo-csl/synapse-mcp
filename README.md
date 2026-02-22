@@ -61,6 +61,9 @@ npm run runner:doctor
 node dist/runner.js start --poll-ms=500
 node dist/runner.js start --once
 node dist/runner.js run <cycle_id>
+node dist/runner.js report <cycle_id>
+node dist/runner.js migrate --dry-run
+node dist/runner.js migrate
 ```
 
 Runner commands:
@@ -69,6 +72,8 @@ Runner commands:
 - `synapse-runner run <cycle_id> [--repo-root=/path]`
 - `synapse-runner doctor [--repo-root=/path]`
 - `synapse-runner health [--repo-root=/path]`
+- `synapse-runner report <cycle_id> [--repo-root=/path]`
+- `synapse-runner migrate [--dry-run] [--repo-root=/path]`
 
 ## Config
 
@@ -93,16 +98,22 @@ On first run, defaults are created:
   "adapters": {
     "gemini": {
       "mode": "stub",
-      "command": "gemini"
+      "command": "gemini",
+      "require_marker": false
     },
     "codexExec": {
-      "command": "codex exec"
+      "command": "codex exec",
+      "require_marker": false
     }
   },
   "locks": {
     "ttl_ms": 20000,
     "heartbeat_ms": 5000,
-    "takeover_grace_ms": 2000
+    "takeover_grace_ms": 2000,
+    "pid_liveness_check": true
+  },
+  "cancellation": {
+    "term_grace_ms": 1500
   },
   "denylist_substrings": [
     "rm -rf /",
@@ -116,12 +127,17 @@ Notes:
 
 - Set `adapters.gemini.mode` to `cli` to execute Gemini CLI.
 - Backend adapter runs `${adapters.codexExec.command} "<prompt>"`.
+- `adapters.*.require_marker=true` enforces strict `SYNAPSE_RESULT_JSON: {...}` structured output.
 - Lock behavior:
   - runner acquires per-cycle lock before claim/transition writes
   - runner now keeps the lock lease during full phase execution (adapter + checks + finalize)
   - lock heartbeat extends lock while a phase is running
   - stale locks are automatically taken over after `expires_at + takeover_grace_ms`
+  - with `locks.pid_liveness_check=true`, stale takeover is blocked if lock PID still appears alive
   - stale in-memory phase claims (`CLAIMED`/`RUNNING`) are reclaimed automatically before re-execution
+- Cancellation behavior:
+  - on cancel, running child gets `SIGTERM`
+  - if still alive after `cancellation.term_grace_ms`, runner escalates to `SIGKILL`
 - Persisted cycle/config/lock payloads are schema-validated (zod) before use.
 - `schema_version` is enforced for persisted files:
   - newer unsupported versions return `UNSUPPORTED_VERSION`
@@ -151,7 +167,10 @@ If you do not include that instruction, use normal direct coding flow.
 npm test
 npm run test:unit
 npm run test:integration
+npm run test:e2e
 ```
+
+`test:e2e` is optional. It only runs when `E2E=1`; use `E2E_CODEX_CMD` to provide a real backend command.
 
 ## Current MVP Notes
 
@@ -169,4 +188,4 @@ npm run test:integration
   - retryable: `PHASE_TIMEOUT`, `LOCK_HELD`, `CHECK_FAILED`, `ADAPTER_FAILED`
   - terminal (no retry): `SCHEMA_INVALID`, `ADAPTER_OUTPUT_PARSE_FAILED`, `ADAPTER_OUTPUT_INVALID`, `PATCH_INVALID`, `PATCH_APPLY_FAILED`, `REPO_BOUNDARY`, `COMMAND_BLOCKED`, `CONFIG_INVALID`, `CYCLE_CORRUPT`
 - Cancellation:
-  - `synapse.cancel` during a running phase triggers in-flight process abort (`SIGKILL`) and keeps cycle state `CANCELED`.
+  - `synapse.cancel` during a running phase sends `SIGTERM`, then `SIGKILL` after `cancellation.term_grace_ms` if needed, and keeps cycle state `CANCELED`.
