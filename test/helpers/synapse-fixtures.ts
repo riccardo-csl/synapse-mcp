@@ -43,7 +43,13 @@ export async function writeSynapseConfig(
       gemini: {
         mode: "stub",
         command: "gemini",
-        require_marker: false
+        require_marker: false,
+        max_output_bytes: 1_000_000,
+        max_patch_bytes: 500_000,
+        max_file_ops: 100,
+        max_file_op_bytes: 300_000,
+        repair_retry_on_invalid_output: false,
+        max_repair_attempts: 1
       },
       codexExec: {
         command: "node -e \"require('fs').writeFileSync('backend.txt','ok')\"",

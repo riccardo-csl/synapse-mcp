@@ -93,7 +93,13 @@ export const runnerConfigSchema = z.object({
     gemini: z.object({
       mode: z.enum(["stub", "cli"]),
       command: z.string().min(1),
-      require_marker: z.boolean().default(false)
+      require_marker: z.boolean().default(false),
+      max_output_bytes: z.number().int().positive().default(1_000_000),
+      max_patch_bytes: z.number().int().positive().default(500_000),
+      max_file_ops: z.number().int().positive().default(100),
+      max_file_op_bytes: z.number().int().positive().default(300_000),
+      repair_retry_on_invalid_output: z.boolean().default(false),
+      max_repair_attempts: z.number().int().nonnegative().default(1)
     }).strict(),
     codexExec: z.object({
       command: z.string().min(1),

@@ -14,7 +14,8 @@
     "runner:start": "npm run clean && npm run build && node dist/runner.js start",
     "runner:doctor": "npm run clean && npm run build && node dist/runner.js doctor",
     "runner:health": "npm run clean && npm run build && node dist/runner.js health",
-    "runner:migrate": "npm run clean && npm run build && node dist/runner.js migrate --dry-run"
+    "runner:migrate": "npm run clean && npm run build && node dist/runner.js migrate --dry-run",
+    "observer:target": "node scripts/synapse-observer-helper.mjs"
   },
   "bin": {
     "synapse-mcp": "./dist/index.js",

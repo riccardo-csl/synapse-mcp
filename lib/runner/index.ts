@@ -184,11 +184,22 @@ export async function report(cycleId: string, repoRootArg?: string): Promise<{
   errors: {
     last_error: any;
     error_log_count: number;
+    recommended_action?: string;
+    hint?: string;
   };
   events: Array<{ ts: string; level: string; phase_id?: string; event?: string; message: string }>;
 }> {
   const repoRoot = resolveRepoRoot(repoRootArg);
   const cycle = await readCycle(repoRoot, cycleId);
+  const lastErrorDetails = (cycle.last_error?.details && typeof cycle.last_error.details === "object")
+    ? cycle.last_error.details as Record<string, unknown>
+    : null;
+  const recommendedAction = typeof lastErrorDetails?.recommended_action === "string"
+    ? lastErrorDetails.recommended_action
+    : undefined;
+  const hint = typeof lastErrorDetails?.hint === "string"
+    ? lastErrorDetails.hint
+    : undefined;
 
   return {
     cycle_id: cycle.id,
@@ -212,7 +223,9 @@ export async function report(cycleId: string, repoRootArg?: string): Promise<{
     },
     errors: {
       last_error: cycle.last_error,
-      error_log_count: cycle.logs.filter((l) => l.level === "ERROR").length
+      error_log_count: cycle.logs.filter((l) => l.level === "ERROR").length,
+      recommended_action: recommendedAction,
+      hint
     },
     events: cycle.logs.map((l) => ({
       ts: l.ts,

@@ -45,6 +45,7 @@ function isRetryableError(code: string): boolean {
     case "SCHEMA_INVALID":
     case "ADAPTER_OUTPUT_PARSE_FAILED":
     case "ADAPTER_OUTPUT_INVALID":
+    case "ADAPTER_CAPACITY_EXHAUSTED":
     case "PATCH_INVALID":
     case "PATCH_APPLY_FAILED":
     case "REPO_BOUNDARY":

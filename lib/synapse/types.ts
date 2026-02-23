@@ -108,6 +108,12 @@ export interface RunnerConfig {
       mode: "stub" | "cli";
       command: string;
       require_marker: boolean;
+      max_output_bytes: number;
+      max_patch_bytes: number;
+      max_file_ops: number;
+      max_file_op_bytes: number;
+      repair_retry_on_invalid_output: boolean;
+      max_repair_attempts: number;
     };
     codexExec: {
       command: string;

@@ -8,7 +8,11 @@ import { createCycleSpec } from "../../lib/synapse/stateMachine.js";
 import type { RunnerConfig } from "../../lib/synapse/types.js";
 import { cleanupDir, createTempRepo } from "../helpers/synapse-fixtures.js";
 
-function baseConfig(command: string): RunnerConfig {
+function baseConfig(
+  command: string,
+  requireMarker = false,
+  geminiOverrides: Partial<RunnerConfig["adapters"]["gemini"]> = {}
+): RunnerConfig {
   return {
     schema_version: 1,
     storage_dir: ".synapse",
@@ -26,7 +30,14 @@ function baseConfig(command: string): RunnerConfig {
       gemini: {
         mode: "cli",
         command,
-        require_marker: false
+        require_marker: requireMarker,
+        max_output_bytes: 1_000_000,
+        max_patch_bytes: 500_000,
+        max_file_ops: 100,
+        max_file_op_bytes: 300_000,
+        repair_retry_on_invalid_output: false,
+        max_repair_attempts: 1,
+        ...geminiOverrides
       },
       codexExec: {
         command: "codex exec",
@@ -110,6 +121,180 @@ test("Gemini adapter uses final marked payload when debug JSON is present", asyn
 
     const written = await fs.readFile(path.join(repoRoot, "ui/result.txt"), "utf8");
     assert.equal(written, "ok");
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter requires marker in strict mode", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-require-marker-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const payload = { file_ops: [{ path: "ui/x.txt", action: "write", content: "ok" }] };
+    const command = `node -e ${JSON.stringify(`console.log(${JSON.stringify(JSON.stringify(payload))})`)}`;
+    await assert.rejects(
+      () => runGeminiPhase(cycle, cycle.phases[0], baseConfig(command, true)),
+      (err: any) => err?.code === "ADAPTER_OUTPUT_PARSE_FAILED"
+    );
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter supports BEGIN/END structured markers", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-block-marker-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const payload = {
+      file_ops: [{ path: "ui/block.txt", action: "write", content: "block" }],
+      report: { source: "block" }
+    };
+    const script = [
+      "console.log('debug line');",
+      `console.log(${JSON.stringify("SYNAPSE_RESULT_JSON_BEGIN")});`,
+      `console.log(${JSON.stringify(JSON.stringify(payload))});`,
+      `console.log(${JSON.stringify("SYNAPSE_RESULT_JSON_END")});`
+    ].join(" ");
+    const command = `node -e ${JSON.stringify(script)}`;
+
+    const result = await runGeminiPhase(cycle, cycle.phases[0], baseConfig(command, true));
+    assert.equal((result.report as any).source, "block");
+    assert.equal(await fs.readFile(path.join(repoRoot, "ui/block.txt"), "utf8"), "block");
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter rejects duplicate file_ops for the same path", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-duplicate-fileops-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const payload = {
+      file_ops: [
+        { path: "ui/dup.txt", action: "write", content: "a" },
+        { path: "ui/dup.txt", action: "write", content: "b" }
+      ]
+    };
+    const script = `console.log(${JSON.stringify(`SYNAPSE_RESULT_JSON: ${JSON.stringify(payload)}`)});`;
+    const command = `node -e ${JSON.stringify(script)}`;
+
+    await assert.rejects(
+      () => runGeminiPhase(cycle, cycle.phases[0], baseConfig(command)),
+      (err: any) => err?.code === "ADAPTER_OUTPUT_INVALID"
+    );
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter enforces max_file_ops limit", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-fileops-limit-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const payload = {
+      file_ops: [
+        { path: "ui/a.txt", action: "write", content: "a" },
+        { path: "ui/b.txt", action: "write", content: "b" }
+      ]
+    };
+    const command = `node -e ${JSON.stringify(`console.log(${JSON.stringify(`SYNAPSE_RESULT_JSON: ${JSON.stringify(payload)}`)})`)}`;
+
+    await assert.rejects(
+      () => runGeminiPhase(cycle, cycle.phases[0], baseConfig(command, false, { max_file_ops: 1 })),
+      (err: any) => err?.code === "ADAPTER_OUTPUT_INVALID"
+    );
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter can repair invalid first output with one retry", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-repair-retry-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const script = [
+      "const fs=require('fs');",
+      "const f='.synapse-gemini-repair-flag';",
+      "if (!fs.existsSync(f)) {",
+      "  fs.writeFileSync(f,'1');",
+      "  console.log('not-json');",
+      "} else {",
+      "  const payload={file_ops:[{path:'ui/repaired.txt',action:'write',content:'ok'}],report:{repaired:true}};",
+      "  console.log('SYNAPSE_RESULT_JSON: '+JSON.stringify(payload));",
+      "}"
+    ].join(" ");
+    const command = `node -e ${JSON.stringify(script)}`;
+
+    const result = await runGeminiPhase(cycle, cycle.phases[0], baseConfig(command, false, {
+      repair_retry_on_invalid_output: true,
+      max_repair_attempts: 1
+    }));
+
+    assert.equal((result.report as any).repaired, true);
+    assert.equal((result.report as any).repair_attempts, 1);
+    assert.equal(await fs.readFile(path.join(repoRoot, "ui/repaired.txt"), "utf8"), "ok");
+    assert.equal(result.commands_run.length, 2);
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter classifies provider capacity exhaustion as ADAPTER_CAPACITY_EXHAUSTED", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-capacity-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const script = [
+      "console.error('status: 429');",
+      "console.error('RESOURCE_EXHAUSTED');",
+      "console.error('MODEL_CAPACITY_EXHAUSTED');",
+      "console.error('{\"model\":\"gemini-3-pro-preview\"}');",
+      "process.exit(1);"
+    ].join(" ");
+    const command = `node -e ${JSON.stringify(script)}`;
+
+    await assert.rejects(
+      () => runGeminiPhase(cycle, cycle.phases[0], baseConfig(command)),
+      (err: any) =>
+        err?.code === "ADAPTER_CAPACITY_EXHAUSTED"
+        && err?.details?.model === "gemini-3-pro-preview"
+        && err?.details?.recommended_action === "retry_later_or_switch_model"
+    );
   } finally {
     await cleanupDir(repoRoot);
   }
