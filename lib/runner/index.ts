@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { claimNextRunnablePhase, claimPhaseForCycle, executeClaimedPhase } from "./service.js";
 import { runShellCommand } from "./command.js";
 import { ensureSynapseStore, listCycles, loadRunnerConfig, readCycle } from "../synapse/store.js";
+import type { LogEntry } from "../synapse/types.js";
 import { detectMigrationStatus, migrateStore } from "../synapse/migrate.js";
 
 export interface RunnerStartOptions {
@@ -17,6 +18,10 @@ function sleep(ms: number): Promise<void> {
 
 function resolveRepoRoot(repoRoot?: string): string {
   return path.resolve(repoRoot || process.cwd());
+}
+
+function isTerminalCycleStatus(status: string): boolean {
+  return status === "DONE" || status === "FAILED" || status === "CANCELED";
 }
 
 export async function startRunner(options: RunnerStartOptions = {}): Promise<void> {
@@ -235,4 +240,73 @@ export async function report(cycleId: string, repoRootArg?: string): Promise<{
       message: l.message
     }))
   };
+}
+
+export async function logs(
+  cycleId: string,
+  repoRootArg?: string,
+  tailArg?: number
+): Promise<{
+  cycle_id: string;
+  status: string;
+  entries: LogEntry[];
+}> {
+  const repoRoot = resolveRepoRoot(repoRootArg);
+  const cycle = await readCycle(repoRoot, cycleId);
+  const tail = typeof tailArg === "number" && tailArg > 0 ? Math.floor(tailArg) : null;
+  const entries = tail ? cycle.logs.slice(-tail) : cycle.logs;
+
+  return {
+    cycle_id: cycle.id,
+    status: cycle.status,
+    entries
+  };
+}
+
+export interface FollowLogsOptions {
+  repoRoot?: string;
+  tail?: number;
+  pollMs?: number;
+  onEntry?: (entry: LogEntry, index: number) => void;
+}
+
+export async function followLogs(
+  cycleId: string,
+  options: FollowLogsOptions = {}
+): Promise<{
+  cycle_id: string;
+  status: string;
+  entries_emitted: number;
+}> {
+  const repoRoot = resolveRepoRoot(options.repoRoot);
+  const pollMs = typeof options.pollMs === "number" && options.pollMs > 0 ? Math.floor(options.pollMs) : 1000;
+  const tail = typeof options.tail === "number" && options.tail > 0 ? Math.floor(options.tail) : null;
+  const onEntry = options.onEntry || (() => {});
+
+  let emitted = 0;
+  let cursor = 0;
+  let cycle = await readCycle(repoRoot, cycleId);
+
+  if (tail) {
+    cursor = Math.max(0, cycle.logs.length - tail);
+  }
+
+  while (true) {
+    for (let i = cursor; i < cycle.logs.length; i += 1) {
+      onEntry(cycle.logs[i], i);
+      emitted += 1;
+    }
+    cursor = cycle.logs.length;
+
+    if (isTerminalCycleStatus(cycle.status)) {
+      return {
+        cycle_id: cycle.id,
+        status: cycle.status,
+        entries_emitted: emitted
+      };
+    }
+
+    await sleep(pollMs);
+    cycle = await readCycle(repoRoot, cycleId);
+  }
 }

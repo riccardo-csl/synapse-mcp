@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { doctor, health, migrate, report, runCycle, startRunner } from "./lib/runner/index.js";
+import { doctor, followLogs, health, logs, migrate, report, runCycle, startRunner } from "./lib/runner/index.js";
 
 function parseFlag(args: string[], name: string): string | undefined {
   const full = `--${name}=`;
@@ -62,6 +62,39 @@ async function main() {
     return;
   }
 
+  if (command === "logs") {
+    const cycleId = rest[0];
+    if (!cycleId) {
+      throw new Error("Usage: synapse-runner logs <cycle_id> [--tail=N] [--follow] [--poll-ms=1000] [--repo-root=/path]");
+    }
+    const args = rest.slice(1);
+    const repoRoot = parseFlag(args, "repo-root");
+    const tailRaw = parseFlag(args, "tail");
+    const pollMsRaw = parseFlag(args, "poll-ms");
+    const tail = tailRaw ? Number(tailRaw) : undefined;
+    const pollMs = pollMsRaw ? Number(pollMsRaw) : undefined;
+    const follow = args.includes("--follow");
+
+    if (follow) {
+      const summary = await followLogs(cycleId, {
+        repoRoot,
+        tail,
+        pollMs,
+        onEntry(entry) {
+          const phase = entry.phase_id ? ` ${entry.phase_id}` : "";
+          const event = typeof entry.meta?.event === "string" ? ` event=${entry.meta.event}` : "";
+          console.log(`[${entry.ts}] ${entry.level}${phase}${event} ${entry.message}`);
+        }
+      });
+      console.log(JSON.stringify(summary, null, 2));
+      return;
+    }
+
+    const result = await logs(cycleId, repoRoot, tail);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   throw new Error(
     "Usage:\n"
       + "  synapse-runner start [--once] [--poll-ms=500] [--repo-root=/path]\n"
@@ -69,7 +102,8 @@ async function main() {
       + "  synapse-runner doctor [--repo-root=/path]\n"
       + "  synapse-runner health [--repo-root=/path]\n"
       + "  synapse-runner migrate [--dry-run] [--repo-root=/path]\n"
-      + "  synapse-runner report <cycle_id> [--repo-root=/path]"
+      + "  synapse-runner report <cycle_id> [--repo-root=/path]\n"
+      + "  synapse-runner logs <cycle_id> [--tail=N] [--follow] [--poll-ms=1000] [--repo-root=/path]"
   );
 }
 
