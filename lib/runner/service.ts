@@ -92,6 +92,15 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
   let didScheduleRetry = false;
 
   await withCycleLock(repoRoot, claimed.cycle_id, async () => {
+    const throwIfCycleCanceled = async () => {
+      const latest = await readCycle(repoRoot, claimed.cycle_id);
+      if (latest.status === "CANCELED") {
+        throw synapseError("PHASE_CANCELED", "Cycle canceled during phase execution", {
+          phase_id: claimed.phase_id
+        });
+      }
+    };
+
     const cycle = await readCycle(repoRoot, claimed.cycle_id);
     markClaimedPhaseRunning(cycle, claimed.phase_index, claimed.claim_token);
     addLog(cycle, "INFO", `Runner ${runnerId} executing phase`, { runner: runnerId }, claimed.phase_id);
@@ -253,12 +262,7 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
 
       progressStage = "checks";
       const checkResults = await runPhaseChecks(cycle, phaseForRun, config, commandsRun, cancelController.signal);
-      const latestCycle = await readCycle(repoRoot, claimed.cycle_id);
-      if (latestCycle.status === "CANCELED") {
-        throw synapseError("PHASE_CANCELED", "Cycle canceled during phase execution", {
-          phase_id: claimed.phase_id
-        });
-      }
+      await throwIfCycleCanceled();
 
       const afterChanged = await listChangedFiles(cycle.repo_root);
       const changedFiles = phaseChangedFilesForArtifacts(beforeChanged, afterChanged, execResult);
@@ -277,6 +281,8 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
       const phaseDurationMs = durationMs(phase?.started_at || null, runStartedMs);
       cycle.artifacts.phase_durations_ms[claimed.phase_id] =
         (cycle.artifacts.phase_durations_ms[claimed.phase_id] || 0) + phaseDurationMs;
+
+      await throwIfCycleCanceled();
 
       markPhaseDone(
         cycle,
