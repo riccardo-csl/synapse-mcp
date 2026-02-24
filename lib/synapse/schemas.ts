@@ -99,7 +99,9 @@ export const runnerConfigSchema = z.object({
       max_file_ops: z.number().int().positive().default(100),
       max_file_op_bytes: z.number().int().positive().default(300_000),
       repair_retry_on_invalid_output: z.boolean().default(false),
-      max_repair_attempts: z.number().int().nonnegative().default(1)
+      max_repair_attempts: z.number().int().nonnegative().default(1),
+      stream_output_to_runner: z.boolean().default(false),
+      stream_output_to_synapse_logs: z.boolean().default(false)
     }).strict(),
     codexExec: z.object({
       command: z.string().min(1),

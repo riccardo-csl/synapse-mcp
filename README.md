@@ -420,7 +420,9 @@ Example (current default shape, shortened comments removed):
       "max_file_ops": 100,
       "max_file_op_bytes": 300000,
       "repair_retry_on_invalid_output": false,
-      "max_repair_attempts": 1
+      "max_repair_attempts": 1,
+      "stream_output_to_runner": false,
+      "stream_output_to_synapse_logs": false
     },
     "codexExec": {
       "command": "codex exec",
@@ -516,6 +518,38 @@ Recommended for real Gemini usage:
   }
 }
 ```
+
+To see Gemini's visible CLI output live in the runner terminal (for human monitoring), enable:
+
+```json
+{
+  "adapters": {
+    "gemini": {
+      "stream_output_to_runner": true
+    }
+  }
+}
+```
+
+Quick one-off override (without editing config):
+
+```bash
+SYNAPSE_GEMINI_STREAM_OUTPUT_TO_RUNNER=1 node dist/runner.js start --repo-root=/path/to/project-repo
+```
+
+To make Gemini visible output available to Codex via `synapse.logs` / `synapse-runner logs`, enable:
+
+```json
+{
+  "adapters": {
+    "gemini": {
+      "stream_output_to_synapse_logs": true
+    }
+  }
+}
+```
+
+This writes truncated/rate-limited Gemini stdout/stderr snippets into the cycle event log (for monitoring), in addition to normal phase lifecycle events.
 
 #### `checks`
 
@@ -816,4 +850,3 @@ Code that runs an external tool (Gemini CLI or `codex exec`) and translates its 
 ### `.synapse/`
 
 The repo-local storage folder where Synapse keeps config, cycle files, and locks.
-

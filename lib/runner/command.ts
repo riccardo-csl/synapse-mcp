@@ -13,6 +13,8 @@ export interface CommandResult {
 export interface RunShellOptions {
   signal?: AbortSignal;
   termGraceMs?: number;
+  onStdoutChunk?: (chunk: string) => void;
+  onStderrChunk?: (chunk: string) => void;
 }
 
 export async function runShellCommand(
@@ -120,10 +122,22 @@ export async function runShellCommand(
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
+      const text = String(chunk);
+      stdout += text;
+      try {
+        options.onStdoutChunk?.(text);
+      } catch {
+        // best-effort streaming callbacks must not affect command execution
+      }
     });
     child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
+      const text = String(chunk);
+      stderr += text;
+      try {
+        options.onStderrChunk?.(text);
+      } catch {
+        // best-effort streaming callbacks must not affect command execution
+      }
     });
 
     child.on("error", (err) => {

@@ -37,6 +37,8 @@ function baseConfig(
         max_file_op_bytes: 300_000,
         repair_retry_on_invalid_output: false,
         max_repair_attempts: 1,
+        stream_output_to_runner: false,
+        stream_output_to_synapse_logs: false,
         ...geminiOverrides
       },
       codexExec: {
@@ -265,6 +267,45 @@ test("Gemini adapter can repair invalid first output with one retry", async () =
     assert.equal(await fs.readFile(path.join(repoRoot, "ui/repaired.txt"), "utf8"), "ok");
     assert.equal(result.commands_run.length, 2);
   } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("Gemini adapter can stream visible output to runner terminal when enabled", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-stream-runner-");
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const captured: string[] = [];
+  (process.stdout.write as any) = ((chunk: any, ...args: any[]) => {
+    captured.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const payload = {
+      file_ops: [{ path: "ui/stream.txt", action: "write", content: "ok" }],
+      report: { source: "stream-test" }
+    };
+    const script = [
+      "console.log('gemini-visible-step');",
+      `console.log(${JSON.stringify(`SYNAPSE_RESULT_JSON: ${JSON.stringify(payload)}`)});`
+    ].join(" ");
+    const command = `node -e ${JSON.stringify(script)}`;
+
+    const result = await runGeminiPhase(cycle, cycle.phases[0], baseConfig(command, false, {
+      stream_output_to_runner: true
+    }));
+
+    assert.equal((result.report as any).source, "stream-test");
+    assert.equal(captured.some((s) => s.includes("gemini-visible-step")), true);
+  } finally {
+    process.stdout.write = originalStdoutWrite as typeof process.stdout.write;
     await cleanupDir(repoRoot);
   }
 });

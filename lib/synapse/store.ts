@@ -36,7 +36,9 @@ export const DEFAULT_RUNNER_CONFIG: RunnerConfig = {
       max_file_ops: 100,
       max_file_op_bytes: 300_000,
       repair_retry_on_invalid_output: false,
-      max_repair_attempts: 1
+      max_repair_attempts: 1,
+      stream_output_to_runner: false,
+      stream_output_to_synapse_logs: false
     },
     codexExec: {
       command: "codex exec",

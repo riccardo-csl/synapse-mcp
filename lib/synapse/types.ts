@@ -114,6 +114,8 @@ export interface RunnerConfig {
       max_file_op_bytes: number;
       repair_retry_on_invalid_output: boolean;
       max_repair_attempts: number;
+      stream_output_to_runner: boolean;
+      stream_output_to_synapse_logs: boolean;
     };
     codexExec: {
       command: string;

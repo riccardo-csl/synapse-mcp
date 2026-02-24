@@ -5,6 +5,7 @@ import { synapseError } from "../../synapse/errors.js";
 import { geminiAdapterOutputSchema } from "../../synapse/schemas.js";
 import type { CycleSpec, PhaseExecutionResult, PhaseSpec, RunnerConfig } from "../../synapse/types.js";
 import { runShellCommand, tail } from "../command.js";
+import { buildWorkerPhaseContextBlock } from "./promptContext.js";
 
 type GeminiStructuredOutput = import("zod").infer<typeof geminiAdapterOutputSchema>;
 const RESULT_MARKER = "SYNAPSE_RESULT_JSON:";
@@ -21,6 +22,11 @@ interface GeminiCommandAttempt {
   command: string;
   stdout: string;
   stderr: string;
+}
+
+export interface GeminiOutputHooks {
+  onStdoutChunk?: (chunk: string) => void;
+  onStderrChunk?: (chunk: string) => void;
 }
 
 function utf8ByteLength(value: string): number {
@@ -369,6 +375,8 @@ function buildGeminiPrompt(
     `You are executing synapse phase ${phase.type}.`,
     `Request: ${cycle.request_text}`,
     `Constraints: ${(cycle.constraints || []).join("; ") || "none"}`,
+    buildWorkerPhaseContextBlock(cycle, phase),
+    "Use the worker context to start from suggested files and recent phase outputs before broad repo scans.",
     requireMarker
       ? "Return ONLY structured output using one of the required marker formats at the end."
       : "Return ONLY JSON with exactly one content mode.",
@@ -402,12 +410,27 @@ async function executeGeminiCommand(
   cycle: CycleSpec,
   phase: PhaseSpec,
   config: RunnerConfig,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  hooks: GeminiOutputHooks = {}
 ): Promise<GeminiCommandAttempt> {
+  const streamToRunner = config.adapters.gemini.stream_output_to_runner
+    || process.env.SYNAPSE_GEMINI_STREAM_OUTPUT_TO_RUNNER === "1";
   const command = `${config.adapters.gemini.command} ${JSON.stringify(prompt)}`;
   const result = await runShellCommand(command, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, {
     signal,
-    termGraceMs: config.cancellation.term_grace_ms
+    termGraceMs: config.cancellation.term_grace_ms,
+    onStdoutChunk: streamToRunner
+      ? (chunk) => {
+        process.stdout.write(chunk);
+        hooks.onStdoutChunk?.(chunk);
+      }
+      : hooks.onStdoutChunk,
+    onStderrChunk: streamToRunner
+      ? (chunk) => {
+        process.stderr.write(chunk);
+        hooks.onStderrChunk?.(chunk);
+      }
+      : hooks.onStderrChunk
   });
   if (result.canceled) {
     throw synapseError("PHASE_CANCELED", "Gemini phase canceled", { phase_id: phase.id });
@@ -438,7 +461,8 @@ export async function runGeminiPhase(
   cycle: CycleSpec,
   phase: PhaseSpec,
   config: RunnerConfig,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  hooks: GeminiOutputHooks = {}
 ): Promise<PhaseExecutionResult> {
   if (config.adapters.gemini.mode === "stub") {
     return {
@@ -471,7 +495,7 @@ export async function runGeminiPhase(
         last_error: lastOutputError
       });
 
-    const executed = await executeGeminiCommand(prompt, cycle, phase, config, signal);
+    const executed = await executeGeminiCommand(prompt, cycle, phase, config, signal, hooks);
     commandsRun.push(executed.command);
 
     try {

@@ -2,6 +2,7 @@ import { synapseError } from "../../synapse/errors.js";
 import { codexStructuredOutputSchema } from "../../synapse/schemas.js";
 import type { CycleSpec, PhaseExecutionResult, PhaseSpec, RunnerConfig } from "../../synapse/types.js";
 import { runShellCommand, tail } from "../command.js";
+import { buildWorkerPhaseContextBlock } from "./promptContext.js";
 
 function inferFrontendTweakRequired(stdout: string): boolean {
   return /frontend_tweak_required\s*[:=]\s*true/i.test(stdout);
@@ -60,10 +61,28 @@ export async function runCodexBackendPhase(
 ): Promise<PhaseExecutionResult> {
   const requireMarker = config.adapters.codexExec.require_marker;
   const prompt = [
-    "You are executing a Synapse BACKEND phase.",
+    "You are executing a Synapse BACKEND phase as a worker subprocess.",
+    "The orchestration is already running outside this process.",
+    "Your job is to implement backend code changes in the target repository for this phase.",
+    "You MAY scan the repository code and tests as needed to understand existing patterns and make a correct backend change.",
+    "Prefer targeted scans first (likely folders/files for the feature) before broad searches.",
+    "Do NOT act as an orchestrator.",
+    "Do NOT call any synapse.* MCP tools.",
+    "Do NOT create, cancel, poll, or manage cycles.",
+    "Do NOT inspect or manage MCP server configuration or .synapse runtime state.",
+    "Ignore Synapse internals and focus on application backend code, tests, and integration points in the target repo.",
+    `Phase ID: ${phase.id}`,
+    `Phase Type: ${phase.type}`,
+    `Repository Root: ${cycle.repo_root}`,
     `Request: ${cycle.request_text}`,
     `Constraints: ${(cycle.constraints || []).join("; ") || "none"}`,
-    "Update backend implementation to satisfy frontend contract.",
+    buildWorkerPhaseContextBlock(cycle, phase),
+    "Use the worker context first to focus your scan on likely files and recent phase outputs.",
+    "Backend worker checklist:",
+    "1) Inspect the relevant backend code and tests in the target repo.",
+    "2) Implement the backend change required by the request.",
+    "3) Keep changes scoped to the requested backend behavior.",
+    "4) If backend changes require frontend updates, set frontend_tweak_required=true in the final structured trailer.",
     "If backend changes require frontend updates, print: frontend_tweak_required=true",
     requireMarker
       ? "Final output line is REQUIRED in this exact format:"
