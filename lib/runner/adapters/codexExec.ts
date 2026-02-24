@@ -4,6 +4,56 @@ import type { CycleSpec, PhaseExecutionResult, PhaseSpec, RunnerConfig } from ".
 import { runShellCommand, tail } from "../command.js";
 import { buildWorkerPhaseContextBlock } from "./promptContext.js";
 
+export interface CodexBackendHooks {
+  onWorkerContext?: (meta: {
+    suggested_start_files_count: number;
+    seed_file_snippets_count: number;
+    worker_memory_hints_used: number;
+    repo_index_suggestions_used: number;
+  }) => void | Promise<void>;
+}
+
+function shellEscapeSingleArg(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function parseWorkerContextMetricsFromBlock(block: string): {
+  suggested_start_files_count: number;
+  seed_file_snippets_count: number;
+  worker_memory_hints_used: number;
+  repo_index_suggestions_used: number;
+} {
+  const begin = "SYNAPSE_PHASE_CONTEXT_BEGIN";
+  const end = "SYNAPSE_PHASE_CONTEXT_END";
+  const beginIdx = block.indexOf(begin);
+  const endIdx = block.indexOf(end);
+  if (beginIdx < 0 || endIdx < 0 || endIdx <= beginIdx) {
+    return {
+      suggested_start_files_count: 0,
+      seed_file_snippets_count: 0,
+      worker_memory_hints_used: 0,
+      repo_index_suggestions_used: 0
+    };
+  }
+  try {
+    const raw = block.slice(beginIdx + begin.length, endIdx).trim();
+    const parsed = JSON.parse(raw) as any;
+    return {
+      suggested_start_files_count: Array.isArray(parsed?.suggested_start_files) ? parsed.suggested_start_files.length : 0,
+      seed_file_snippets_count: Array.isArray(parsed?.seed_file_snippets) ? parsed.seed_file_snippets.length : 0,
+      worker_memory_hints_used: Array.isArray(parsed?.worker_memory?.file_hints) ? parsed.worker_memory.file_hints.length : 0,
+      repo_index_suggestions_used: Array.isArray(parsed?.repo_index_suggestions) ? parsed.repo_index_suggestions.length : 0
+    };
+  } catch {
+    return {
+      suggested_start_files_count: 0,
+      seed_file_snippets_count: 0,
+      worker_memory_hints_used: 0,
+      repo_index_suggestions_used: 0
+    };
+  }
+}
+
 function inferFrontendTweakRequired(stdout: string): boolean {
   return /frontend_tweak_required\s*[:=]\s*true/i.test(stdout);
 }
@@ -57,9 +107,16 @@ export async function runCodexBackendPhase(
   cycle: CycleSpec,
   phase: PhaseSpec,
   config: RunnerConfig,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  hooks: CodexBackendHooks = {}
 ): Promise<PhaseExecutionResult> {
   const requireMarker = config.adapters.codexExec.require_marker;
+  const workerContextBlock = await buildWorkerPhaseContextBlock(cycle, phase, { storageDir: config.storage_dir });
+  try {
+    await hooks.onWorkerContext?.(parseWorkerContextMetricsFromBlock(workerContextBlock));
+  } catch {
+    // best-effort observability callback
+  }
   const prompt = [
     "You are executing a Synapse BACKEND phase as a worker subprocess.",
     "The orchestration is already running outside this process.",
@@ -76,7 +133,7 @@ export async function runCodexBackendPhase(
     `Repository Root: ${cycle.repo_root}`,
     `Request: ${cycle.request_text}`,
     `Constraints: ${(cycle.constraints || []).join("; ") || "none"}`,
-    buildWorkerPhaseContextBlock(cycle, phase),
+    workerContextBlock,
     "Use the worker context first to focus your scan on likely files and recent phase outputs.",
     "Backend worker checklist:",
     "1) Inspect the relevant backend code and tests in the target repo.",
@@ -90,7 +147,7 @@ export async function runCodexBackendPhase(
     "SYNAPSE_RESULT_JSON: {\"frontend_tweak_required\": true|false, \"report\": {...}}"
   ].join("\n");
 
-  const command = `${config.adapters.codexExec.command} ${JSON.stringify(prompt)}`;
+  const command = `${config.adapters.codexExec.command} ${shellEscapeSingleArg(prompt)}`;
   const result = await runShellCommand(command, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, {
     signal,
     termGraceMs: config.cancellation.term_grace_ms

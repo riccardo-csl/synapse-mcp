@@ -271,6 +271,51 @@ test("Gemini adapter can repair invalid first output with one retry", async () =
   }
 });
 
+test("Gemini adapter repair prompt is shell-safe when previous stdout contains backticks and ${...}", async () => {
+  const repoRoot = await createTempRepo("synapse-gemini-repair-shellsafe-");
+  try {
+    const cycle = createCycleSpec({
+      request: "Build frontend",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["FRONTEND"]
+    });
+
+    const script = [
+      "const fs=require('fs');",
+      "const path=require('path');",
+      "const f='.synapse-gemini-repair-shellsafe-flag';",
+      "const prompt=process.argv.slice(1).join(' ');",
+      "if (!fs.existsSync(f)) {",
+      "  fs.writeFileSync(f,'1');",
+      "  console.log('I used `replace` and saw template `${statusColor}` in JSX.');",
+      "  console.log('SYNAPSE_RESULT_JSON_BEGIN');",
+      "  console.log(JSON.stringify({ report: { summary: 'missing payload mode' }, frontend_tweak_required: false }));",
+      "  console.log('SYNAPSE_RESULT_JSON_END');",
+      "} else {",
+      "  if (!prompt.includes('Previous output failed Synapse validation')) process.exit(9);",
+      "  if (!prompt.includes('`replace`')) process.exit(10);",
+      "  if (!prompt.includes('${statusColor}')) process.exit(11);",
+      "  const payload={file_ops:[{path:'ui/shellsafe-repair.txt',action:'write',content:'ok'}],report:{repaired:true}};",
+      "  console.log('SYNAPSE_RESULT_JSON: '+JSON.stringify(payload));",
+      "}"
+    ].join(" ");
+    const command = `node -e ${JSON.stringify(script)}`;
+
+    const result = await runGeminiPhase(cycle, cycle.phases[0], baseConfig(command, true, {
+      repair_retry_on_invalid_output: true,
+      max_repair_attempts: 1
+    }));
+
+    assert.equal((result.report as any).repaired, true);
+    assert.equal((result.report as any).repair_attempts, 1);
+    assert.equal(await fs.readFile(path.join(repoRoot, "ui/shellsafe-repair.txt"), "utf8"), "ok");
+    assert.equal(result.commands_run.length, 2);
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
 test("Gemini adapter can stream visible output to runner terminal when enabled", async () => {
   const repoRoot = await createTempRepo("synapse-gemini-stream-runner-");
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);

@@ -9,10 +9,14 @@ import {
   markPhaseFailed
 } from "../synapse/stateMachine.js";
 import { listCycles, loadRunnerConfig, readCycle, withCycleLock, writeCycle } from "../synapse/store.js";
-import type { CycleSpec, PhaseExecutionResult, PhaseSpec, RunnerConfig } from "../synapse/types.js";
-import { listChangedFiles, runShellCommand, tail } from "./command.js";
-import { runGeminiPhase } from "./adapters/gemini.js";
-import { runCodexBackendPhase } from "./adapters/codexExec.js";
+import type { CycleSpec, RunnerConfig } from "../synapse/types.js";
+import { listChangedFiles, tail } from "./command.js";
+import { updateWorkerMemory } from "./adapters/workerMemory.js";
+import { phaseChangedFilesForArtifacts, uniqStrings } from "./service/artifacts.js";
+import { durationMs, phaseProgressLogIntervalMs } from "./service/progress.js";
+import { runPhaseAdapter } from "./service/phaseAdapters.js";
+import { runPhaseChecks } from "./service/phaseChecks.js";
+import { isRetryableError, RETRY_BACKOFF_MS, sleep, toErrorShape } from "./service/retryPolicy.js";
 
 export interface ClaimedPhase {
   cycle_id: string;
@@ -21,153 +25,8 @@ export interface ClaimedPhase {
   claim_token: string;
 }
 
-const RETRY_BACKOFF_MS = 250;
-const DEFAULT_PHASE_PROGRESS_LOG_MS = 15_000;
 const GEMINI_LOG_FLUSH_MS = 2_000;
 const GEMINI_LOG_CHUNK_MAX_CHARS = 1200;
-
-function uniq(items: string[]): string[] {
-  return Array.from(new Set(items));
-}
-
-function reportFilesModified(report: Record<string, unknown> | undefined): string[] {
-  const raw = report && Array.isArray((report as any).files_modified)
-    ? (report as any).files_modified
-    : null;
-  if (!raw) {
-    return [];
-  }
-  return uniq(raw.filter((item: unknown) => typeof item === "string" && item.trim()).map((item: string) => item.trim()));
-}
-
-function phaseChangedFilesForArtifacts(
-  beforeChanged: string[],
-  afterChanged: string[],
-  execResult: PhaseExecutionResult
-): string[] {
-  const fromReport = reportFilesModified(execResult.report);
-  if (fromReport.length > 0) {
-    return fromReport;
-  }
-
-  const before = new Set(beforeChanged);
-  return uniq(afterChanged.filter((file) => !before.has(file)));
-}
-
-function toErrorShape(err: any): { code: string; message: string; details: Record<string, unknown> } {
-  return {
-    code: err?.code || "PHASE_FAILED",
-    message: err?.message || "Unknown phase failure",
-    details: err?.details || {}
-  };
-}
-
-function isRetryableError(code: string): boolean {
-  switch (code) {
-    case "PHASE_TIMEOUT":
-    case "LOCK_HELD":
-    case "CHECK_FAILED":
-    case "ADAPTER_FAILED":
-      return true;
-    case "SCHEMA_INVALID":
-    case "ADAPTER_OUTPUT_PARSE_FAILED":
-    case "ADAPTER_OUTPUT_INVALID":
-    case "ADAPTER_CAPACITY_EXHAUSTED":
-    case "PATCH_INVALID":
-    case "PATCH_APPLY_FAILED":
-    case "REPO_BOUNDARY":
-    case "COMMAND_BLOCKED":
-    case "CONFIG_INVALID":
-    case "CYCLE_CORRUPT":
-      return false;
-    default:
-      return true;
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function phaseProgressLogIntervalMs(): number {
-  const raw = Number(process.env.SYNAPSE_PHASE_PROGRESS_LOG_MS || DEFAULT_PHASE_PROGRESS_LOG_MS);
-  if (!Number.isFinite(raw) || raw <= 0) {
-    return DEFAULT_PHASE_PROGRESS_LOG_MS;
-  }
-  return Math.floor(raw);
-}
-
-function durationMs(startedAt: string | null, fallbackStartMs: number): number {
-  if (!startedAt) {
-    return Math.max(0, Date.now() - fallbackStartMs);
-  }
-  const parsed = Date.parse(startedAt);
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Date.now() - fallbackStartMs);
-  }
-  return Math.max(0, Date.now() - parsed);
-}
-
-async function runPhaseAdapter(
-  cycle: CycleSpec,
-  phase: PhaseSpec,
-  config: RunnerConfig,
-  signal?: AbortSignal,
-  hooks?: { onGeminiStdoutChunk?: (chunk: string) => void; onGeminiStderrChunk?: (chunk: string) => void }
-): Promise<PhaseExecutionResult> {
-  if (phase.type === "BACKEND") {
-    return runCodexBackendPhase(cycle, phase, config, signal);
-  }
-  if (phase.type === "FRONTEND" || phase.type === "FRONTEND_TWEAK") {
-    return runGeminiPhase(cycle, phase, config, signal, {
-      onStdoutChunk: hooks?.onGeminiStdoutChunk,
-      onStderrChunk: hooks?.onGeminiStderrChunk
-    });
-  }
-  throw synapseError("INVALID_PHASE", "Unsupported phase type", { type: phase.type });
-}
-
-async function runPhaseChecks(
-  cycle: CycleSpec,
-  phase: PhaseSpec,
-  config: RunnerConfig,
-  commandsRun: string[],
-  signal?: AbortSignal
-): Promise<Array<{ command: string; ok: boolean; code: number | null; stdout_tail: string; stderr_tail: string }>> {
-  const checks = config.checks[phase.type] || [];
-  const results: Array<{ command: string; ok: boolean; code: number | null; stdout_tail: string; stderr_tail: string }> = [];
-
-  for (const cmd of checks) {
-    const result = await runShellCommand(cmd, cycle.repo_root, phase.timeout_ms, config.denylist_substrings, {
-      signal,
-      termGraceMs: config.cancellation.term_grace_ms
-    });
-    if (result.canceled) {
-      throw synapseError("PHASE_CANCELED", "Phase checks canceled", { phase_id: phase.id, command: cmd });
-    }
-    commandsRun.push(cmd);
-    const entry = {
-      command: cmd,
-      ok: result.code === 0 && !result.timedOut,
-      code: result.code,
-      stdout_tail: tail(result.stdout),
-      stderr_tail: tail(result.stderr)
-    };
-    results.push(entry);
-
-    if (!entry.ok) {
-      throw synapseError("CHECK_FAILED", "Post-phase check failed", {
-        phase: phase.type,
-        command: cmd,
-        code: result.code,
-        timedOut: result.timedOut,
-        stderr: entry.stderr_tail
-      });
-    }
-  }
-
-  return results;
-}
 
 export async function claimNextRunnablePhase(repoRoot: string, runnerId: string): Promise<ClaimedPhase | null> {
   const config = await loadRunnerConfig(repoRoot);
@@ -365,7 +224,18 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
     try {
       const execResult = await runPhaseAdapter(cycle, phaseForRun, config, cancelController.signal, {
         onGeminiStdoutChunk: (chunk) => appendGeminiChunk("stdout", chunk),
-        onGeminiStderrChunk: (chunk) => appendGeminiChunk("stderr", chunk)
+        onGeminiStderrChunk: (chunk) => appendGeminiChunk("stderr", chunk),
+        onWorkerContext: async (meta) => {
+          addLog(cycle, "INFO", "Worker context seeded", {
+            event: "context.seeded",
+            adapter: meta.adapter,
+            suggested_start_files_count: meta.suggested_start_files_count,
+            seed_file_snippets_count: meta.seed_file_snippets_count,
+            worker_memory_hints_used: meta.worker_memory_hints_used,
+            repo_index_suggestions_used: meta.repo_index_suggestions_used
+          }, claimed.phase_id);
+          await writeCycle(repoRoot, cycle);
+        }
       });
       commandsRun.push(...execResult.commands_run);
       await flushGeminiOutputToCycleLogs().catch(() => {});
@@ -400,8 +270,8 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
       }
 
       const phase = cycle.phases[claimed.phase_index];
-      cycle.artifacts.changed_files = uniq([...cycle.artifacts.changed_files, ...changedFiles]);
-      cycle.artifacts.commands_run = uniq([...cycle.artifacts.commands_run, ...commandsRun]);
+      cycle.artifacts.changed_files = uniqStrings([...cycle.artifacts.changed_files, ...changedFiles]);
+      cycle.artifacts.commands_run = uniqStrings([...cycle.artifacts.commands_run, ...commandsRun]);
       cycle.artifacts.test_results.push(...checkResults);
 
       const phaseDurationMs = durationMs(phase?.started_at || null, runStartedMs);
@@ -428,6 +298,15 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
         outcome: "DONE"
       });
 
+      await updateWorkerMemory({
+        cycle,
+        phase: phaseForRun,
+        config,
+        outcome: "DONE",
+        execResult,
+        changedFiles
+      }).catch(() => {});
+
       await writeCycle(repoRoot, cycle);
     } catch (err: any) {
       await flushGeminiOutputToCycleLogs().catch(() => {});
@@ -435,7 +314,7 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
       const phase = cycle.phases[claimed.phase_index];
       const retryable = isRetryableError(shape.code);
 
-      cycle.artifacts.commands_run = uniq([...cycle.artifacts.commands_run, ...commandsRun]);
+      cycle.artifacts.commands_run = uniqStrings([...cycle.artifacts.commands_run, ...commandsRun]);
       const phaseDurationMs = durationMs(phase?.started_at || null, runStartedMs);
       cycle.artifacts.phase_durations_ms[claimed.phase_id] =
         (cycle.artifacts.phase_durations_ms[claimed.phase_id] || 0) + phaseDurationMs;
@@ -467,6 +346,14 @@ export async function executeClaimedPhase(repoRoot: string, claimed: ClaimedPhas
         outcome: didScheduleRetry ? "RETRY" : "FAILED",
         error_code: shape.code
       });
+
+      await updateWorkerMemory({
+        cycle,
+        phase: phaseForRun,
+        config,
+        outcome: "FAILED",
+        error: shape
+      }).catch(() => {});
 
       await writeCycle(repoRoot, cycle);
     } finally {

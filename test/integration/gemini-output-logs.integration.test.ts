@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { synapseOrchestrate } from "../../lib/synapse/service.js";
-import { report, runCycle } from "../../lib/runner/index.js";
+import { logs, report, runCycle } from "../../lib/runner/index.js";
 import { cleanupDir, createTempRepo, writeSynapseConfig } from "../helpers/synapse-fixtures.js";
 
 test("gemini visible output can be persisted to synapse logs and emits adapter parsed event", async () => {
@@ -59,8 +59,16 @@ test("gemini visible output can be persisted to synapse logs and emits adapter p
 
     const parsedEvents = summary.events.filter((e) => e.event === "adapter.output.parsed");
     assert.equal(parsedEvents.length > 0, true);
+
+    const contextSeededEvents = summary.events.filter((e) => e.event === "context.seeded");
+    assert.equal(contextSeededEvents.length > 0, true);
+    const rawLogs = await logs(orchestrated.cycle_id, repoRoot, 200);
+    const seededEntry = rawLogs.entries.find((e) => (e.meta as any)?.event === "context.seeded");
+    assert.equal(Boolean(seededEntry), true);
+    const seededMeta = ((seededEntry as any)?.meta || {}) as Record<string, unknown>;
+    assert.equal(typeof seededMeta.suggested_start_files_count, "number");
+    assert.equal(typeof seededMeta.seed_file_snippets_count, "number");
   } finally {
     await cleanupDir(repoRoot);
   }
 });
-
