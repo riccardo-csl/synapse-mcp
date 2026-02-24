@@ -129,6 +129,21 @@ export function markPhaseDone(
     throw synapseError("CLAIM_INVALID", "phase claim token mismatch", { phaseIndex });
   }
 
+  // Cancellation is terminal. If a cancel lands while the adapter/checks are finishing,
+  // preserve the canceled cycle and only clean up the in-flight claim.
+  if (cycle.status === "CANCELED") {
+    if (phase.status === "CLAIMED" || phase.status === "RUNNING") {
+      phase.status = "FAILED";
+    }
+    if (!phase.finished_at) {
+      phase.finished_at = nowIso();
+    }
+    phase.claim_token = null;
+    phase.claimed_by = null;
+    cycle.updated_at = nowIso();
+    return;
+  }
+
   phase.status = "DONE";
   phase.output = output;
   phase.finished_at = nowIso();
@@ -169,6 +184,19 @@ export function markPhaseFailed(
   }
   if (phase.claim_token !== claimToken) {
     throw synapseError("CLAIM_INVALID", "phase claim token mismatch", { phaseIndex });
+  }
+
+  if (cycle.status === "CANCELED") {
+    if (phase.status === "CLAIMED" || phase.status === "RUNNING") {
+      phase.status = "FAILED";
+    }
+    if (!phase.finished_at) {
+      phase.finished_at = nowIso();
+    }
+    phase.claim_token = null;
+    phase.claimed_by = null;
+    cycle.updated_at = nowIso();
+    return;
   }
 
   phase.claim_token = null;

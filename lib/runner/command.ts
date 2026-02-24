@@ -34,7 +34,9 @@ export async function runShellCommand(
     const child = spawn("bash", ["-lc", command], {
       cwd,
       env: process.env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      // Make bash the process-group leader so cancellation/timeouts can kill spawned children too.
+      detached: true
     });
 
     let stdout = "";
@@ -47,6 +49,24 @@ export async function runShellCommand(
       : 1500;
 
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const killGroup = (signal: NodeJS.Signals) => {
+      const pid = child.pid;
+      if (!pid) {
+        return;
+      }
+      try {
+        process.kill(-pid, signal);
+        return;
+      } catch {
+        // Fall back to killing just the shell process if group kill is unavailable.
+      }
+      try {
+        child.kill(signal);
+      } catch {
+        // noop
+      }
+    };
 
     const settle = (result: CommandResult) => {
       if (settled) {
@@ -68,18 +88,10 @@ export async function runShellCommand(
         return;
       }
       canceled = true;
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // noop
-      }
+      killGroup("SIGTERM");
 
       if (termGraceMs === 0) {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // noop
-        }
+        killGroup("SIGKILL");
         return;
       }
 
@@ -87,11 +99,7 @@ export async function runShellCommand(
         if (settled) {
           return;
         }
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // noop
-        }
+        killGroup("SIGKILL");
       }, termGraceMs);
     };
 
@@ -106,11 +114,7 @@ export async function runShellCommand(
       if (settled) {
         return;
       }
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        // noop
-      }
+      killGroup("SIGKILL");
       settle({
         command,
         code: null,
