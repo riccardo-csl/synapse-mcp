@@ -12,6 +12,23 @@ export async function writeCycle(repoRoot: string, cycle: CycleSpec, storageDir 
   const paths = await ensureSynapseStore(repoRoot, storageDir);
   const validated = parseOrSchemaError(cycleSpecSchema, cycle, `Refusing to write invalid cycle ${cycle.id}`) as CycleSpec;
   const filePath = path.join(paths.cyclesDir, `${validated.id}.json`);
+
+  // Preserve terminal cancellation when a stale in-memory runner snapshot races with a cancel write.
+  // This keeps cancel semantics monotonic without changing the external store format.
+  try {
+    const existing = await readJsonIfExists(filePath);
+    if (
+      existing
+      && typeof existing === "object"
+      && (existing as { status?: unknown }).status === "CANCELED"
+      && validated.status !== "CANCELED"
+    ) {
+      return;
+    }
+  } catch {
+    // Best effort only; malformed existing JSON will be handled by explicit read paths.
+  }
+
   await atomicWriteJson(filePath, validated);
 }
 
