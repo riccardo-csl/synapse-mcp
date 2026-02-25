@@ -6,7 +6,7 @@ In plain terms:
 
 - Codex acts as the orchestrator-facing agent (it talks to the Synapse MCP server).
 - Gemini acts as a phase worker (mainly frontend generation).
-- A separate local runner executes the phases and writes state to disk.
+- A separate local runner executes Gemini phases and writes state to disk (backend phases are tracked manually in Synapse).
 - Everything is stored in your project repo under `.synapse/`.
 
 This repository contains both:
@@ -96,10 +96,10 @@ Writes are atomic (`tmp -> rename`) to reduce corruption risk.
 If you do not force a custom phase plan, Synapse typically runs:
 
 1. `FRONTEND` (Gemini adapter)
-2. `BACKEND` (Codex adapter via `codex exec`)
+2. `BACKEND` (manual/orchestrator-controlled phase tracked by Synapse)
 3. `FRONTEND_TWEAK` (Gemini adapter, skipped unless needed)
 
-The runner tracks phase status (`PENDING`, `RUNNING`, `DONE`, `FAILED`, etc.) and cycle status (`RUNNING`, `DONE`, `FAILED`, `CANCELED`).
+The runner executes Gemini phases and tracks phase/cycle state (`PENDING`, `RUNNING`, `DONE`, `FAILED`, etc.). `BACKEND` is started/completed explicitly through MCP tools.
 
 ## Quick Start (Single Repo)
 
@@ -269,6 +269,7 @@ Input:
 ```
 
 Use this for polling during execution.
+Phase summaries include `control_mode` (for example `BACKEND` phases are `ORCHESTRATOR`-controlled).
 
 ### 3) `synapse.logs`
 
@@ -286,7 +287,21 @@ Input:
 
 Use this when `status` is not enough (errors, retries, stalls).
 
-### 4) `synapse.cancel`
+### 4) `synapse.phase.start_manual`
+
+Starts a manual/orchestrator-controlled phase (currently `BACKEND`) and marks it `RUNNING`.
+
+Use this when Synapse reaches the backend phase and you are about to do backend work directly in the interactive Codex session.
+
+### 5) `synapse.phase.complete_manual`
+
+Completes the manual `BACKEND` phase with a structured backend completion payload (summary, files modified, checks, `frontend_tweak_required`, and optional API contract details).
+
+### 6) `synapse.phase.fail_manual`
+
+Marks the manual `BACKEND` phase as failed with a structured error (use this instead of `synapse.cancel` for backend implementation failures).
+
+### 7) `synapse.cancel`
 
 Cancels a queued or running cycle.
 
@@ -302,7 +317,7 @@ Input:
 
 If a phase is running, Synapse sends `SIGTERM`, then `SIGKILL` after the configured grace period if needed.
 
-### 5) `synapse.list`
+### 8) `synapse.list`
 
 Lists recent cycles (optionally filtered by status).
 
@@ -316,7 +331,7 @@ Input example:
 }
 ```
 
-### 6) `synapse.render_prompt`
+### 9) `synapse.render_prompt`
 
 Returns a user-facing prompt snippet that tells Codex to use Synapse orchestration correctly.
 
@@ -423,10 +438,6 @@ Example (current default shape, shortened comments removed):
       "max_repair_attempts": 1,
       "stream_output_to_runner": false,
       "stream_output_to_synapse_logs": false
-    },
-    "codexExec": {
-      "command": "codex exec",
-      "require_marker": false
     }
   },
   "locks": {
@@ -445,6 +456,8 @@ Example (current default shape, shortened comments removed):
   ]
 }
 ```
+
+Note: `BACKEND` is a manual/orchestrator-controlled phase in the current workflow. The runner executes Gemini phases only.
 
 ### The most important config settings (practical explanation)
 
@@ -477,7 +490,7 @@ Example:
 }
 ```
 
-#### `adapters.*.require_marker` (recommended = `true`)
+#### `adapters.gemini.require_marker` (recommended = `true`)
 
 When enabled, adapters require a structured output marker instead of guessing/parsing loose output.
 
@@ -488,8 +501,7 @@ Recommended:
 ```json
 {
   "adapters": {
-    "gemini": { "require_marker": true },
-    "codexExec": { "require_marker": true }
+    "gemini": { "require_marker": true }
   }
 }
 ```
@@ -615,6 +627,7 @@ This design is intentional:
 
 - Codex handles tool orchestration
 - Gemini handles frontend generation inside a strict contract
+- Backend implementation is done directly by the orchestrator Codex session and recorded via `synapse.phase.*_manual`
 
 ## Reliability Features (What Synapse Already Handles)
 
@@ -767,7 +780,7 @@ Notes:
 
 - `test:e2e` is optional
 - it only runs when `E2E=1`
-- use `E2E_CODEX_CMD` to provide a real backend command for true E2E
+- use `E2E_GEMINI_CMD` to provide a real Gemini command for true E2E
 
 ## Scripts Included in `package.json`
 
@@ -833,7 +846,7 @@ One orchestrated job (for example: implement one feature request).
 
 ### Phase
 
-One step inside a cycle (`FRONTEND`, `BACKEND`, `FRONTEND_TWEAK`).
+One step inside a cycle (`FRONTEND`, `BACKEND`, `FRONTEND_TWEAK`). Gemini phases are runner-executed; `BACKEND` is orchestrator-controlled and tracked in Synapse state.
 
 ### Runner
 
@@ -845,7 +858,7 @@ The tool server Codex connects to in order to create/check/cancel cycles.
 
 ### Adapter
 
-Code that runs an external tool (Gemini CLI or `codex exec`) and translates its output into Synapse’s structured format.
+Code that runs an external worker tool (primarily Gemini CLI in the current workflow) and translates its output into Synapse’s structured format.
 
 ### `.synapse/`
 

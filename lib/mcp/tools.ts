@@ -84,5 +84,74 @@ export const toolDefinitions = [
         request: { type: "string" }
       }
     }
+  },
+  {
+    name: "synapse.phase.start_manual",
+    description: "Start an orchestrator-controlled manual phase (currently BACKEND only).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cycle_id: { type: "string" },
+        phase_id: { type: "string" },
+        repo_root: { type: "string" },
+        note: { type: "string" }
+      },
+      required: ["cycle_id", "phase_id"]
+    }
+  },
+  {
+    name: "synapse.phase.complete_manual",
+    description: "Complete an orchestrator-controlled manual BACKEND phase with a rich output payload.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cycle_id: { type: "string" },
+        phase_id: { type: "string" },
+        repo_root: { type: "string" },
+        output: {
+          type: "object",
+          properties: {
+            report: {
+              type: "object",
+              properties: {
+                summary: { type: "string" },
+                files_modified: { type: "array", items: { type: "string" } },
+                checks_run: { type: "array", items: { type: "string" } },
+                checks_results: { type: "array", items: { type: "object" } },
+                notes: { type: "array", items: { type: "string" } }
+              },
+              required: ["summary", "files_modified", "checks_run"]
+            },
+            changed_files: { type: "array", items: { type: "string" } },
+            frontend_tweak_required: { type: "boolean" },
+            api_contract: { type: "object" }
+          },
+          required: ["report", "changed_files", "frontend_tweak_required"]
+        }
+      },
+      required: ["cycle_id", "phase_id", "output"]
+    }
+  },
+  {
+    name: "synapse.phase.fail_manual",
+    description: "Fail an orchestrator-controlled manual BACKEND phase with a structured error.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cycle_id: { type: "string" },
+        phase_id: { type: "string" },
+        repo_root: { type: "string" },
+        error: {
+          type: "object",
+          properties: {
+            code: { type: "string" },
+            message: { type: "string" },
+            details: { type: "object" }
+          },
+          required: ["code", "message"]
+        }
+      },
+      required: ["cycle_id", "phase_id", "error"]
+    }
   }
 ];

@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   claimCurrentPhase,
+  completeManualPhase,
   createCycleSpec,
+  failManualPhase,
   markClaimedPhaseRunning,
   markPhaseDone,
-  markPhaseFailed
+  markPhaseFailed,
+  startManualPhase
 } from "../../lib/synapse/stateMachine.js";
 
 test("claimCurrentPhase is idempotent for already-claimed phase", () => {
@@ -27,7 +30,7 @@ test("failed phase retries until max attempts then fails cycle", () => {
     request: "build feature",
     repo_root: "/tmp/repo",
     constraints: [],
-    phases: ["BACKEND"]
+    phases: ["FRONTEND"]
   });
 
   const claim1 = claimCurrentPhase(cycle, "runner-1");
@@ -62,10 +65,14 @@ test("backend completion skips frontend_tweak when not required", () => {
     phases: ["BACKEND", "FRONTEND_TWEAK"]
   });
 
-  const claim = claimCurrentPhase(cycle, "runner-1");
-  assert.ok(claim);
-  markClaimedPhaseRunning(cycle, claim!.phaseIndex, claim!.claimToken);
-  markPhaseDone(cycle, claim!.phaseIndex, claim!.claimToken, { ok: true }, { report: {}, commands_run: [] });
+  const started = startManualPhase(cycle, cycle.phases[0].id);
+  assert.equal(cycle.phases[started.phaseIndex].claimed_by, "orchestrator");
+  completeManualPhase(
+    cycle,
+    cycle.phases[0].id,
+    { frontend_tweak_required: false },
+    { report: {}, commands_run: [], frontend_tweak_required: false }
+  );
 
   assert.equal(cycle.phases[1].status, "SKIPPED");
   assert.equal(cycle.status, "DONE");
@@ -76,7 +83,7 @@ test("claimCurrentPhase reclaims stale running phase", () => {
     request: "recover",
     repo_root: "/tmp/repo",
     constraints: [],
-    phases: ["BACKEND"]
+    phases: ["FRONTEND"]
   });
 
   cycle.status = "RUNNING";
@@ -90,4 +97,25 @@ test("claimCurrentPhase reclaims stale running phase", () => {
   assert.ok(claim);
   assert.equal(cycle.phases[0].status, "CLAIMED");
   assert.equal(cycle.phases[0].claimed_by, "runner-new");
+});
+
+test("manual backend phase can fail terminally via orchestrator", () => {
+  const cycle = createCycleSpec({
+    request: "manual backend fail",
+    repo_root: "/tmp/repo",
+    constraints: [],
+    phases: ["BACKEND"]
+  });
+
+  startManualPhase(cycle, cycle.phases[0].id, "starting backend work");
+  failManualPhase(cycle, cycle.phases[0].id, {
+    code: "BACKEND_IMPL_FAILED",
+    message: "could not complete backend",
+    details: { source: "orchestrator" }
+  });
+
+  assert.equal(cycle.status, "FAILED");
+  assert.equal(cycle.current_phase_index, null);
+  assert.equal(cycle.phases[0].status, "FAILED");
+  assert.equal(cycle.last_error?.code, "BACKEND_IMPL_FAILED");
 });

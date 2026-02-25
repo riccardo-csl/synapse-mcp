@@ -3,6 +3,9 @@ import {
   synapseList,
   synapseLogs,
   synapseOrchestrate,
+  synapsePhaseCompleteManual,
+  synapsePhaseFailManual,
+  synapsePhaseStartManual,
   synapseRenderPrompt,
   synapseStatus
 } from "../synapse/service.js";
@@ -13,7 +16,10 @@ const TOOL_HANDLERS: Record<string, (args: any) => Promise<any>> = {
   "synapse.logs": synapseLogs,
   "synapse.cancel": synapseCancel,
   "synapse.list": synapseList,
-  "synapse.render_prompt": synapseRenderPrompt
+  "synapse.render_prompt": synapseRenderPrompt,
+  "synapse.phase.start_manual": synapsePhaseStartManual,
+  "synapse.phase.complete_manual": synapsePhaseCompleteManual,
+  "synapse.phase.fail_manual": synapsePhaseFailManual
 };
 
 export async function executeTool(name: string, args: Record<string, unknown> = {}) {

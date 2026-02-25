@@ -4,6 +4,7 @@ import { schemaError } from "./errors.js";
 export const cycleStatusSchema = z.enum(["QUEUED", "RUNNING", "DONE", "FAILED", "CANCELED"]);
 export const phaseStatusSchema = z.enum(["PENDING", "CLAIMED", "RUNNING", "DONE", "FAILED", "SKIPPED"]);
 export const phaseTypeSchema = z.enum(["FRONTEND", "BACKEND", "FRONTEND_TWEAK"]);
+export const phaseControlModeSchema = z.enum(["RUNNER", "ORCHESTRATOR"]);
 
 const isoDateSchema = z.string().datetime({ offset: true });
 
@@ -102,10 +103,6 @@ export const runnerConfigSchema = z.object({
       max_repair_attempts: z.number().int().nonnegative().default(1),
       stream_output_to_runner: z.boolean().default(false),
       stream_output_to_synapse_logs: z.boolean().default(false)
-    }).strict(),
-    codexExec: z.object({
-      command: z.string().min(1),
-      require_marker: z.boolean().default(false)
     }).strict()
   }).strict(),
   locks: z.object({
@@ -158,6 +155,67 @@ export const cancelInputSchema = z.object({
   repo_root: z.string().optional()
 }).strict();
 
+export const manualPhaseStartInputSchema = z.object({
+  cycle_id: z.string().min(1),
+  phase_id: z.string().min(1),
+  repo_root: z.string().optional(),
+  note: z.string().optional()
+}).strict();
+
+const testResultLikeSchema = z.object({
+  command: z.string(),
+  ok: z.boolean(),
+  code: z.number().int().nullable(),
+  stdout_tail: z.string(),
+  stderr_tail: z.string()
+}).strict();
+
+const backendEndpointSchema = z.object({
+  method: z.string().min(1),
+  path: z.string().min(1),
+  request_shape: z.record(z.string(), z.unknown()).optional(),
+  response_shape: z.record(z.string(), z.unknown()).optional()
+}).strict();
+
+const backendDataShapeSchema = z.object({
+  name: z.string().min(1),
+  example: z.record(z.string(), z.unknown())
+}).strict();
+
+export const manualBackendCompletionOutputInputSchema = z.object({
+  report: z.object({
+    summary: z.string().min(1),
+    files_modified: z.array(z.string()),
+    checks_run: z.array(z.string()),
+    checks_results: z.array(testResultLikeSchema).optional(),
+    notes: z.array(z.string()).optional()
+  }).strict(),
+  changed_files: z.array(z.string()),
+  frontend_tweak_required: z.boolean(),
+  api_contract: z.object({
+    endpoints: z.array(backendEndpointSchema).optional(),
+    data_shapes: z.array(backendDataShapeSchema).optional()
+  }).strict().optional()
+}).strict();
+
+export const manualPhaseCompleteInputSchema = z.object({
+  cycle_id: z.string().min(1),
+  phase_id: z.string().min(1),
+  repo_root: z.string().optional(),
+  output: manualBackendCompletionOutputInputSchema
+}).strict();
+
+export const manualPhaseFailInputSchema = z.object({
+  cycle_id: z.string().min(1),
+  phase_id: z.string().min(1),
+  repo_root: z.string().optional(),
+  error: z.object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    details: z.record(z.string(), z.unknown()).optional()
+  }).strict()
+}).strict();
+
 export const listInputSchema = z.object({
   limit: z.number().int().positive().optional(),
   status: cycleStatusSchema.optional(),
@@ -173,7 +231,8 @@ export const phaseSummarySchema = z.object({
   type: phaseTypeSchema,
   status: phaseStatusSchema,
   attempt_count: z.number().int().nonnegative(),
-  max_attempts: z.number().int().positive()
+  max_attempts: z.number().int().positive(),
+  control_mode: phaseControlModeSchema.optional()
 }).strict();
 
 export const orchestrateOutputSchema = z.object({
@@ -208,6 +267,27 @@ export const logsOutputSchema = z.object({
 export const cancelOutputSchema = z.object({
   cycle_id: z.string(),
   status: cycleStatusSchema
+}).strict();
+
+export const manualPhaseStartOutputSchema = z.object({
+  cycle_id: z.string(),
+  phase_id: z.string(),
+  status: z.literal("RUNNING")
+}).strict();
+
+export const manualPhaseCompleteOutputSchema = z.object({
+  cycle_id: z.string(),
+  phase_id: z.string(),
+  phase_status: z.literal("DONE"),
+  cycle_status: cycleStatusSchema,
+  next_phase_id: z.string().nullable()
+}).strict();
+
+export const manualPhaseFailOutputSchema = z.object({
+  cycle_id: z.string(),
+  phase_id: z.string(),
+  phase_status: z.literal("FAILED"),
+  cycle_status: z.literal("FAILED")
 }).strict();
 
 export const listOutputSchema = z.object({

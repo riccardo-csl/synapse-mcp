@@ -3,7 +3,7 @@ import { nowIso } from "../../core/time.js";
 import { synapseError } from "../errors.js";
 import type { CycleSpec, PhaseExecutionResult, PhaseSpec } from "../types.js";
 import { addLog, isTerminal } from "./logging.js";
-import { nextPendingPhaseIndex } from "./planning.js";
+import { nextPendingPhaseIndex, phaseControlMode } from "./planning.js";
 
 function isStalePhaseClaim(phase: PhaseSpec, reclaimStaleMs: number): boolean {
   if (reclaimStaleMs <= 0) {
@@ -77,6 +77,10 @@ export function claimCurrentPhase(
     return null;
   }
 
+  if (phaseControlMode(phase) === "ORCHESTRATOR") {
+    return null;
+  }
+
   const claimToken = randomBytes(12).toString("hex");
   phase.status = "CLAIMED";
   phase.claim_token = claimToken;
@@ -90,6 +94,48 @@ export function claimCurrentPhase(
   }, phase.id);
 
   return { phaseIndex: idx, claimToken };
+}
+
+function currentPhaseOrThrow(cycle: CycleSpec, phaseId: string): { phase: PhaseSpec; phaseIndex: number } {
+  const idx = cycle.current_phase_index;
+  if (idx === null) {
+    throw synapseError("INVALID_PHASE", "cycle has no current phase", {
+      cycle_id: cycle.id,
+      phase_id: phaseId
+    });
+  }
+  const phase = cycle.phases[idx];
+  if (!phase || phase.id !== phaseId) {
+    throw synapseError("INVALID_PHASE", "phase is not current", {
+      cycle_id: cycle.id,
+      phase_id: phaseId,
+      current_phase_id: phase?.id || null
+    });
+  }
+  return { phase, phaseIndex: idx };
+}
+
+function assertManualBackendPhase(cycle: CycleSpec, phaseId: string): { phase: PhaseSpec; phaseIndex: number } {
+  if (isTerminal(cycle.status)) {
+    throw synapseError("INVALID_PHASE", "cycle is terminal", {
+      cycle_id: cycle.id,
+      status: cycle.status
+    });
+  }
+  const { phase, phaseIndex } = currentPhaseOrThrow(cycle, phaseId);
+  if (phase.type !== "BACKEND") {
+    throw synapseError("INVALID_PHASE", "manual phase tools only support BACKEND phases", {
+      phase_id: phase.id,
+      phase_type: phase.type
+    });
+  }
+  if (phaseControlMode(phase) !== "ORCHESTRATOR") {
+    throw synapseError("INVALID_PHASE", "phase is not orchestrator-controlled", {
+      phase_id: phase.id,
+      control_mode: phaseControlMode(phase)
+    });
+  }
+  return { phase, phaseIndex };
 }
 
 export function markClaimedPhaseRunning(cycle: CycleSpec, phaseIndex: number, claimToken: string): void {
@@ -112,6 +158,38 @@ export function markClaimedPhaseRunning(cycle: CycleSpec, phaseIndex: number, cl
     event: "phase.running",
     attempt: phase.attempt_count
   }, phase.id);
+}
+
+export function startManualPhase(
+  cycle: CycleSpec,
+  phaseId: string,
+  note?: string
+): { phaseIndex: number; claimToken: string } {
+  const { phase, phaseIndex } = assertManualBackendPhase(cycle, phaseId);
+  if (phase.status !== "PENDING") {
+    throw synapseError("INVALID_PHASE", "manual phase must be pending before start", {
+      phase_id: phase.id,
+      status: phase.status
+    });
+  }
+
+  const claimToken = randomBytes(12).toString("hex");
+  phase.status = "RUNNING";
+  phase.claim_token = claimToken;
+  phase.claimed_by = "orchestrator";
+  phase.started_at = nowIso();
+  phase.attempt_count += 1;
+  cycle.status = "RUNNING";
+  cycle.updated_at = nowIso();
+
+  addLog(cycle, "INFO", `Manual phase started: ${phase.type}`, {
+    event: "phase.manual.started",
+    phase_type: phase.type,
+    attempt: phase.attempt_count,
+    ...(note ? { note } : {})
+  }, phase.id);
+
+  return { phaseIndex, claimToken };
 }
 
 export function markPhaseDone(
@@ -171,6 +249,28 @@ export function markPhaseDone(
   }
 }
 
+export function completeManualPhase(
+  cycle: CycleSpec,
+  phaseId: string,
+  output: Record<string, unknown> | null,
+  execResult: PhaseExecutionResult | null
+): void {
+  const { phase, phaseIndex } = assertManualBackendPhase(cycle, phaseId);
+  if (phase.status !== "RUNNING") {
+    throw synapseError("INVALID_PHASE", "manual phase must be RUNNING before completion", {
+      phase_id: phase.id,
+      status: phase.status
+    });
+  }
+  if (phase.claimed_by !== "orchestrator" || !phase.claim_token) {
+    throw synapseError("CLAIM_INVALID", "manual phase is not claimed by orchestrator", {
+      phase_id: phase.id,
+      claimed_by: phase.claimed_by
+    });
+  }
+  markPhaseDone(cycle, phaseIndex, phase.claim_token, output, execResult);
+}
+
 export function markPhaseFailed(
   cycle: CycleSpec,
   phaseIndex: number,
@@ -227,6 +327,27 @@ export function markPhaseFailed(
   }
 
   cycle.updated_at = nowIso();
+}
+
+export function failManualPhase(
+  cycle: CycleSpec,
+  phaseId: string,
+  error: { code: string; message: string; details?: Record<string, unknown> }
+): void {
+  const { phase, phaseIndex } = assertManualBackendPhase(cycle, phaseId);
+  if (phase.status !== "RUNNING") {
+    throw synapseError("INVALID_PHASE", "manual phase must be RUNNING before failure", {
+      phase_id: phase.id,
+      status: phase.status
+    });
+  }
+  if (phase.claimed_by !== "orchestrator" || !phase.claim_token) {
+    throw synapseError("CLAIM_INVALID", "manual phase is not claimed by orchestrator", {
+      phase_id: phase.id,
+      claimed_by: phase.claimed_by
+    });
+  }
+  markPhaseFailed(cycle, phaseIndex, phase.claim_token, error, { forceTerminal: true });
 }
 
 export function cancelCycle(cycle: CycleSpec, reason?: string): void {

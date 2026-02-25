@@ -91,13 +91,15 @@ Parser strategy:
 
 ### Codex (`BACKEND`)
 
-Codex runs via configured `codex exec` command.
+`BACKEND` is a manual/orchestrator-controlled phase in the current workflow.
 
-Optional structured trailer:
+Operational flow:
+- wait for `synapse.status` current phase `BACKEND` (`control_mode="ORCHESTRATOR"`)
+- call `synapse.phase.start_manual`
+- implement backend directly in the interactive Codex session
+- call `synapse.phase.complete_manual` (or `synapse.phase.fail_manual`)
 
-`SYNAPSE_RESULT_JSON: {...}`
-
-If present, trailer JSON is validated. If missing, Synapse falls back to text heuristics (`frontend_tweak_required=true`).
+The backend phase is tracked manually by Synapse and is completed through `synapse.phase.start_manual` / `complete_manual` / `fail_manual`.
 
 ## Diagnostics
 
@@ -106,7 +108,7 @@ Commands:
 - `synapse-runner doctor`
 - `synapse-runner health`
 
-`doctor` reports dependency availability (`codex`, `gemini`), storage paths, cycle counts, lock config, adapter strict-marker mode, and schema migration status.
+`doctor` reports dependency availability (`gemini`), storage paths, cycle counts, lock config, adapter strict-marker mode, and schema migration status.
 `health` reports process/runtime info for supervision checks.
 `report <cycle_id>` returns a cycle summary with phase attempts, artifacts counters, and extracted event log.
 `migrate [--dry-run]` scans `.synapse` files, reports schema drift, and can rewrite older files to current `schema_version`.

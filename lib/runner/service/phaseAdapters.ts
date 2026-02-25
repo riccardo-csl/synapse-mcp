@@ -1,6 +1,5 @@
 import { synapseError } from "../../synapse/errors.js";
 import type { CycleSpec, PhaseExecutionResult, PhaseSpec, RunnerConfig } from "../../synapse/types.js";
-import { runCodexBackendPhase } from "../adapters/codexExec.js";
 import { runGeminiPhase } from "../adapters/gemini.js";
 
 export async function runPhaseAdapter(
@@ -12,7 +11,7 @@ export async function runPhaseAdapter(
     onGeminiStdoutChunk?: (chunk: string) => void;
     onGeminiStderrChunk?: (chunk: string) => void;
     onWorkerContext?: (meta: {
-      adapter: "gemini" | "codexExec";
+      adapter: "gemini";
       suggested_start_files_count: number;
       seed_file_snippets_count: number;
       worker_memory_hints_used: number;
@@ -21,8 +20,10 @@ export async function runPhaseAdapter(
   }
 ): Promise<PhaseExecutionResult> {
   if (phase.type === "BACKEND") {
-    return runCodexBackendPhase(cycle, phase, config, signal, {
-      onWorkerContext: (meta) => hooks?.onWorkerContext?.({ adapter: "codexExec", ...meta })
+    throw synapseError("MANUAL_PHASE_REQUIRED", "BACKEND phases are orchestrator-controlled and must be completed via synapse.phase.* tools", {
+      phase_id: phase.id,
+      phase_type: phase.type,
+      control_mode: "ORCHESTRATOR"
     });
   }
   if (phase.type === "FRONTEND" || phase.type === "FRONTEND_TWEAK") {

@@ -4,6 +4,9 @@ import {
   synapseList,
   synapseLogs,
   synapseOrchestrate,
+  synapsePhaseCompleteManual,
+  synapsePhaseFailManual,
+  synapsePhaseStartManual,
   synapseRenderPrompt,
   synapseStatus
 } from "./synapse/service.js";
@@ -17,6 +20,9 @@ export {
   synapseLogs,
   synapseCancel,
   synapseList,
+  synapsePhaseStartManual,
+  synapsePhaseCompleteManual,
+  synapsePhaseFailManual,
   synapseRenderPrompt,
   startRunner,
   runCycle,

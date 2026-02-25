@@ -37,7 +37,7 @@ The runner executes cycle phases one by one.
 The default phase sequence is:
 
 1. `FRONTEND` phase (Gemini adapter).
-2. `BACKEND` phase (Codex adapter using `codex exec`).
+2. `BACKEND` phase (manual/orchestrator-controlled, tracked by Synapse).
 3. `FRONTEND_TWEAK` phase (Gemini adapter, optional, can be skipped automatically).
 
 Everything is saved locally in `.synapse/` inside your repo.
@@ -73,7 +73,7 @@ Core modules:
 - State machine rules: `lib/synapse/stateMachine.ts`
 - Persistence and locking: `lib/synapse/store.ts`
 - Runner loop and execution: `lib/runner/index.ts`, `lib/runner/service.ts`
-- Adapters: `lib/runner/adapters/gemini.ts`, `lib/runner/adapters/codexExec.ts`
+- Adapters: `lib/runner/adapters/gemini.ts` (Gemini worker execution)
 - Safe file + atomic JSON writes: `lib/storage/files.ts`
 
 Mental model:
@@ -111,7 +111,7 @@ A phase has:
 An adapter is the concrete executor for a phase type.
 
 - Gemini adapter handles `FRONTEND` and `FRONTEND_TWEAK`.
-- Codex adapter handles `BACKEND` with `codex exec`.
+- `BACKEND` is handled manually by the interactive/orchestrator Codex session via `synapse.phase.*_manual`.
 
 ### Claim Token
 Runner claims a phase before execution.
@@ -216,7 +216,7 @@ Runner updates phase:
 ### Step 4: Execute adapter
 Runner chooses adapter by phase type:
 
-- `BACKEND` -> Codex adapter (`codex exec` command).
+- `BACKEND` -> manual/orchestrator-controlled phase (`synapse.phase.start_manual` / `complete_manual` / `fail_manual`).
 - `FRONTEND` or `FRONTEND_TWEAK` -> Gemini adapter.
 
 ### Step 5: Run checks
@@ -402,16 +402,17 @@ Safety checks applied:
 - File operations cannot escape repo root.
 - Patch apply failures return `PATCH_APPLY_FAILED`.
 
-## Codex Adapter (How It Works)
-File: `lib/runner/adapters/codexExec.ts`.
+## Manual Backend Phase (How It Works)
+
+`BACKEND` is tracked in the cycle state but not executed by the runner.
 
 Behavior:
 
-- Builds a backend prompt.
-- Executes configured backend command (default `codex exec`).
-- Captures stdout/stderr.
-- Fails on timeout or non-zero exit.
-- Sets `frontend_tweak_required` if stdout includes `frontend_tweak_required=true`.
+- Orchestrator polls `synapse.status` until backend phase is current.
+- Orchestrator calls `synapse.phase.start_manual`.
+- Backend implementation is done directly in the interactive Codex session.
+- Orchestrator calls `synapse.phase.complete_manual` (or `synapse.phase.fail_manual`) with structured backend output.
+- Synapse records artifacts and decides whether `FRONTEND_TWEAK` is required.
 
 ## Safety and Limits
 Current safety controls include:
@@ -436,14 +437,13 @@ Main knobs you can safely tune:
 - `require_changes`: whether no-file-change should fail a phase.
 - `adapters.gemini.mode`: `stub` or `cli`.
 - `adapters.gemini.command`: Gemini CLI command string.
-- `adapters.codexExec.command`: backend command string, usually starts with `codex exec`.
 - `denylist_substrings`: commands/patterns that should be blocked.
 
 Practical first setup:
 
 1. Keep Gemini in `stub` while validating orchestration.
-2. Set backend command to your working `codex exec` invocation.
-3. Add one cheap check like `npm run build` for `BACKEND`.
+2. Configure Gemini and validate frontend worker execution first.
+3. Add one cheap check you will report in manual backend completion payload (for example `npm run build`).
 4. Later add stricter checks when stable.
 
 ## Day-to-Day Procedure
@@ -509,22 +509,22 @@ How to fix:
 - Start runner with correct repo path.
 - Re-run `synapse.orchestrate` with explicit `repo_root`.
 
-### Symptom: Backend phase fails immediately
+### Symptom: Backend phase does not progress
 Likely causes:
 
-- `codex exec` not installed or not in PATH.
-- Backend command in config is invalid.
+- Orchestrator has not started/completed the manual backend phase.
+- Wrong `phase_id` used in `synapse.phase.*_manual` call.
 
 How to check:
 
-- `node dist/runner.js doctor` and verify `codex: true`.
 - Read last error in `synapse.status`.
+- Confirm current phase in `synapse.status` is `BACKEND` and check `control_mode`.
 - View tail logs with `synapse.logs`.
 
 How to fix:
 
-- Install/fix Codex CLI in PATH.
-- Update `.synapse/config.json` adapter command.
+- Call `synapse.phase.start_manual` for the current backend phase.
+- Complete with `synapse.phase.complete_manual` (or `fail_manual`) using the same `phase_id`.
 
 ### Symptom: Gemini phase does nothing
 Likely causes:
@@ -596,7 +596,7 @@ How to fix:
 - Runner loop: `lib/runner/index.ts`
 - Phase execution orchestration: `lib/runner/service.ts`
 - Gemini behavior: `lib/runner/adapters/gemini.ts`
-- Codex backend behavior: `lib/runner/adapters/codexExec.ts`
+- Manual backend phase lifecycle: `lib/synapse/service.ts`, `lib/synapse/stateMachine/transitions.ts`
 - Shell execution safety/timeouts: `lib/runner/command.ts`
 
 ## Glossary

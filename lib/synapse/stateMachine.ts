@@ -11,7 +11,10 @@ export {
 export {
   cancelCycle,
   claimCurrentPhase,
+  completeManualPhase,
+  failManualPhase,
   markClaimedPhaseRunning,
   markPhaseDone,
-  markPhaseFailed
+  markPhaseFailed,
+  startManualPhase
 } from "./stateMachine/transitions.js";

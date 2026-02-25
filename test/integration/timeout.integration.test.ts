@@ -6,25 +6,26 @@ import { synapseOrchestrate, synapseStatus } from "../../lib/synapse/service.js"
 import { readCycle, writeCycle } from "../../lib/synapse/store.js";
 import { cleanupDir, createTempRepo, writeSynapseConfig } from "../helpers/synapse-fixtures.js";
 
-test("backend timeout exhausts retries and fails cycle", async () => {
+test("frontend timeout exhausts retries and fails cycle", async () => {
   const repoRoot = await createTempRepo("synapse-timeout-");
   try {
     await writeSynapseConfig(repoRoot, {
       require_changes: {
-        BACKEND: false
+        FRONTEND: false
       },
       adapters: {
-        codexExec: {
+        gemini: {
+          mode: "cli",
           command: "node -e \"setTimeout(() => {}, 600)\""
         }
       }
     });
 
     const orchestrated = await synapseOrchestrate({
-      request: "Implement slow backend",
+      request: "Implement slow frontend",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 

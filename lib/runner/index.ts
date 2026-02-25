@@ -80,7 +80,6 @@ export async function health(repoRootArg?: string): Promise<{
 
 export async function doctor(repoRootArg?: string): Promise<{
   node: string;
-  codex: boolean;
   gemini: boolean;
   repo_root: string;
   storage: {
@@ -111,12 +110,10 @@ export async function doctor(repoRootArg?: string): Promise<{
     lock_pid_liveness_check: boolean;
     cancellation_term_grace_ms: number;
     gemini_require_marker: boolean;
-    codex_require_marker: boolean;
   };
 }> {
   const repoRoot = resolveRepoRoot(repoRootArg);
-  const [codex, gemini, paths, config, cycles, migration] = await Promise.all([
-    checkCommand("codex", repoRoot),
+  const [gemini, paths, config, cycles, migration] = await Promise.all([
     checkCommand("gemini", repoRoot),
     ensureSynapseStore(repoRoot),
     loadRunnerConfig(repoRoot),
@@ -126,7 +123,6 @@ export async function doctor(repoRootArg?: string): Promise<{
 
   return {
     node: process.version,
-    codex,
     gemini,
     repo_root: repoRoot,
     storage: {
@@ -156,8 +152,7 @@ export async function doctor(repoRootArg?: string): Promise<{
       lock_takeover_grace_ms: config.locks.takeover_grace_ms,
       lock_pid_liveness_check: config.locks.pid_liveness_check,
       cancellation_term_grace_ms: config.cancellation.term_grace_ms,
-      gemini_require_marker: config.adapters.gemini.require_marker,
-      codex_require_marker: config.adapters.codexExec.require_marker
+      gemini_require_marker: config.adapters.gemini.require_marker
     }
   };
 }

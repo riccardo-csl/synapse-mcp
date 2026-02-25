@@ -5,28 +5,34 @@ import { synapseOrchestrate, synapseStatus } from "../../lib/synapse/service.js"
 import { runCycle } from "../../lib/runner/index.js";
 import { cleanupDir, createTempRepo, writeSynapseConfig } from "../helpers/synapse-fixtures.js";
 
-test("backend phase retries on check failure then marks cycle FAILED", async () => {
+test("frontend phase retries on check failure then marks cycle FAILED", async () => {
   const repoRoot = await createTempRepo("synapse-retry-check-");
   try {
     await writeSynapseConfig(repoRoot, {
       checks: {
-        BACKEND: ["false"]
+        FRONTEND: ["false"]
       },
       require_changes: {
-        BACKEND: false
+        FRONTEND: false
       },
       adapters: {
-        codexExec: {
-          command: "node -e \"console.log('backend run')\""
+        gemini: {
+          mode: "cli",
+          command: `node -e ${JSON.stringify([
+            "console.log('SYNAPSE_RESULT_JSON_BEGIN');",
+            "console.log(JSON.stringify({ file_ops: [{ path: 'frontend.txt', action: 'write', content: 'x' }], report: { summary: 'frontend run', files_modified: ['frontend.txt'] }, frontend_tweak_required: false }));",
+            "console.log('SYNAPSE_RESULT_JSON_END');"
+          ].join(" "))}`,
+          require_marker: true
         }
       }
     });
 
     const orchestrated = await synapseOrchestrate({
-      request: "Implement backend with failing checks",
+      request: "Implement frontend with failing checks",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 

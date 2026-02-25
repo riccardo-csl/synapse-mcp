@@ -1,7 +1,15 @@
-import type { CycleSpec, PhaseSpec, PhaseStatus, PhaseSummary, PhaseType } from "../types.js";
+import type { CycleSpec, PhaseControlMode, PhaseSpec, PhaseStatus, PhaseSummary, PhaseType } from "../types.js";
 import { synapseError } from "../errors.js";
 
 const DEFAULT_PHASE_ORDER: PhaseType[] = ["FRONTEND", "BACKEND", "FRONTEND_TWEAK"];
+
+export function phaseControlMode(phase: PhaseSpec): PhaseControlMode {
+  const mode = phase.input?.control_mode;
+  if (mode === "ORCHESTRATOR") {
+    return "ORCHESTRATOR";
+  }
+  return "RUNNER";
+}
 
 function defaultTimeout(type: PhaseType): number {
   if (type === "FRONTEND") {
@@ -26,7 +34,9 @@ export function buildPhases(phaseTypes?: PhaseType[]): PhaseSpec[] {
     id: `phase_${index + 1}_${type.toLowerCase()}`,
     type,
     status: "PENDING",
-    input: {},
+    input: {
+      control_mode: type === "BACKEND" ? "ORCHESTRATOR" : "RUNNER"
+    },
     output: null,
     started_at: null,
     finished_at: null,
@@ -44,7 +54,8 @@ export function summarizePhases(phases: PhaseSpec[]): PhaseSummary[] {
     type: phase.type,
     status: phase.status,
     attempt_count: phase.attempt_count,
-    max_attempts: phase.max_attempts
+    max_attempts: phase.max_attempts,
+    control_mode: phaseControlMode(phase)
   }));
 }
 

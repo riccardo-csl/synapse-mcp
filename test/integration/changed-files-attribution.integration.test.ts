@@ -18,9 +18,14 @@ test("phase changed_files attribution excludes unrelated pre-existing dirty file
         FRONTEND_TWEAK: false
       },
       adapters: {
-        codexExec: {
-          command: "node -e \"require('fs').writeFileSync('backend.txt','ok')\"",
-          require_marker: false
+        gemini: {
+          mode: "cli",
+          command: `node -e ${JSON.stringify([
+            "console.log('SYNAPSE_RESULT_JSON_BEGIN');",
+            "console.log(JSON.stringify({ file_ops: [{ path: 'frontend.txt', action: 'write', content: 'ok' }], report: { summary: 'frontend done', files_modified: ['frontend.txt'] }, frontend_tweak_required: false }));",
+            "console.log('SYNAPSE_RESULT_JSON_END');"
+          ].join(" "))}`,
+          require_marker: true
         }
       }
     });
@@ -29,10 +34,10 @@ test("phase changed_files attribution excludes unrelated pre-existing dirty file
     await fs.writeFile(path.join(repoRoot, "README.md"), "# temp dirty\n", "utf8");
 
     const orchestrated = await synapseOrchestrate({
-      request: "Backend only changed files attribution test",
+      request: "Frontend changed files attribution test",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 
@@ -42,8 +47,8 @@ test("phase changed_files attribution excludes unrelated pre-existing dirty file
     assert.equal(cycle.status, "DONE");
     const phaseOutput = cycle.phases[0].output as any;
     const phaseChangedFiles = Array.isArray(phaseOutput?.changed_files) ? phaseOutput.changed_files : [];
-    assert.deepEqual(phaseChangedFiles, ["backend.txt"]);
-    assert.equal(cycle.artifacts.changed_files.includes("backend.txt"), true);
+    assert.deepEqual(phaseChangedFiles, ["frontend.txt"]);
+    assert.equal(cycle.artifacts.changed_files.includes("frontend.txt"), true);
     assert.equal(cycle.artifacts.changed_files.includes("README.md"), false);
   } finally {
     await cleanupDir(repoRoot);

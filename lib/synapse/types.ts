@@ -6,6 +6,8 @@ export type PhaseStatus = (typeof PHASE_STATUSES)[number];
 
 export const PHASE_TYPES = ["FRONTEND", "BACKEND", "FRONTEND_TWEAK"] as const;
 export type PhaseType = (typeof PHASE_TYPES)[number];
+export const PHASE_CONTROL_MODES = ["RUNNER", "ORCHESTRATOR"] as const;
+export type PhaseControlMode = (typeof PHASE_CONTROL_MODES)[number];
 
 export interface LogEntry {
   ts: string;
@@ -78,6 +80,7 @@ export interface PhaseSummary {
   status: PhaseStatus;
   attempt_count: number;
   max_attempts: number;
+  control_mode?: PhaseControlMode;
 }
 
 export interface CycleSummary {
@@ -116,10 +119,6 @@ export interface RunnerConfig {
       max_repair_attempts: number;
       stream_output_to_runner: boolean;
       stream_output_to_synapse_logs: boolean;
-    };
-    codexExec: {
-      command: string;
-      require_marker: boolean;
     };
   };
   locks: {

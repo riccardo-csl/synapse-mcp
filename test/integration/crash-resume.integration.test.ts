@@ -13,8 +13,14 @@ test("runner resumes stale running phase after crash-style state", async () => {
   try {
     await writeSynapseConfig(repoRoot, {
       adapters: {
-        codexExec: {
-          command: "node -e \"require('fs').writeFileSync('resumed.txt','ok')\""
+        gemini: {
+          mode: "cli",
+          command: `node -e ${JSON.stringify([
+            "console.log('SYNAPSE_RESULT_JSON_BEGIN');",
+            "console.log(JSON.stringify({ file_ops: [{ path: 'resumed.txt', action: 'write', content: 'ok' }], report: { summary: 'resumed', files_modified: ['resumed.txt'] }, frontend_tweak_required: false }));",
+            "console.log('SYNAPSE_RESULT_JSON_END');"
+          ].join(" "))}`,
+          require_marker: true
         }
       }
     });
@@ -23,7 +29,7 @@ test("runner resumes stale running phase after crash-style state", async () => {
       request: "Resume after stale crash",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 

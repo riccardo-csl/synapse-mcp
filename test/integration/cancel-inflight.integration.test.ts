@@ -50,19 +50,32 @@ async function cancelAndWaitForCanceled(cycleId: string, repoRoot: string, timeo
 test("cancel during running adapter reaches terminal state without leaving runaway process effects", async () => {
   const repoRoot = await createTempRepo("synapse-cancel-inflight-");
   try {
+    const payload = {
+      file_ops: [{ path: "late.txt", action: "write", content: "x" }],
+      report: { summary: "frontend done", files_modified: ["late.txt"] },
+      frontend_tweak_required: false
+    };
     await writeSynapseConfig(repoRoot, {
       adapters: {
-        codexExec: {
-          command: "exec node -e \"setTimeout(()=>require('fs').writeFileSync('late.txt','x'), 15000)\""
+        gemini: {
+          mode: "cli",
+          command: `exec node -e ${JSON.stringify([
+            "setTimeout(() => {",
+            "console.log('SYNAPSE_RESULT_JSON_BEGIN');",
+            `console.log(${JSON.stringify(JSON.stringify(payload))});`,
+            "console.log('SYNAPSE_RESULT_JSON_END');",
+            "}, 15000);"
+          ].join(" "))}`,
+          require_marker: true
         }
       }
     });
 
     const orchestrated = await synapseOrchestrate({
-      request: "Run backend then cancel in-flight",
+      request: "Run frontend then cancel in-flight",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 
@@ -73,7 +86,7 @@ test("cancel during running adapter reaches terminal state without leaving runaw
       await cancelAndWaitForCanceled(orchestrated.cycle_id, repoRoot);
       cancelWon = true;
     } catch (error) {
-      // In the full-suite CI run, the backend command can occasionally complete before the cancel request
+      // In the full-suite CI run, the frontend command can occasionally complete before the cancel request
       // is processed. That is a race between completion and cancellation, not a runner correctness bug.
       const status = await synapseStatus({ cycle_id: orchestrated.cycle_id, repo_root: repoRoot });
       if (status.status !== "DONE") {

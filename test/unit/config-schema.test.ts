@@ -19,8 +19,7 @@ test("loadRunnerConfig rejects invalid config with CONFIG_INVALID", async () => 
         checks: { FRONTEND: [], BACKEND: [], FRONTEND_TWEAK: [] },
         require_changes: { FRONTEND: false, BACKEND: true, FRONTEND_TWEAK: false },
         adapters: {
-          gemini: { mode: "stub", command: "gemini" },
-          codexExec: { command: "codex exec" }
+          gemini: { mode: "stub", command: "gemini" }
         },
         locks: { ttl_ms: -1, heartbeat_ms: 100, takeover_grace_ms: 0 },
         denylist_substrings: []
@@ -50,8 +49,7 @@ test("loadRunnerConfig rejects unsupported schema version", async () => {
         checks: { FRONTEND: [], BACKEND: [], FRONTEND_TWEAK: [] },
         require_changes: { FRONTEND: false, BACKEND: true, FRONTEND_TWEAK: false },
         adapters: {
-          gemini: { mode: "stub", command: "gemini" },
-          codexExec: { command: "codex exec" }
+          gemini: { mode: "stub", command: "gemini" }
         },
         locks: { ttl_ms: 20000, heartbeat_ms: 1000, takeover_grace_ms: 0 },
         denylist_substrings: []

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { synapseOrchestrate } from "../../lib/synapse/service.js";
+import { synapseOrchestrate, synapsePhaseCompleteManual, synapsePhaseStartManual } from "../../lib/synapse/service.js";
 import { report, runCycle } from "../../lib/runner/index.js";
 import { cleanupDir, createTempRepo, writeSynapseConfig } from "../helpers/synapse-fixtures.js";
 
@@ -25,6 +25,23 @@ test("runner report summarizes a completed cycle", async () => {
     });
 
     await runCycle(orchestrated.cycle_id, repoRoot);
+    const phaseId = (await report(orchestrated.cycle_id, repoRoot)).phases[0].id;
+    await synapsePhaseStartManual({ cycle_id: orchestrated.cycle_id, phase_id: phaseId, repo_root: repoRoot });
+    await synapsePhaseCompleteManual({
+      cycle_id: orchestrated.cycle_id,
+      phase_id: phaseId,
+      repo_root: repoRoot,
+      output: {
+        report: {
+          summary: "manual backend done",
+          files_modified: [],
+          checks_run: [],
+          checks_results: []
+        },
+        changed_files: [],
+        frontend_tweak_required: false
+      }
+    });
     const summary = await report(orchestrated.cycle_id, repoRoot);
 
     assert.equal(summary.status, "DONE");

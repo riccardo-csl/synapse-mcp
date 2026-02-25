@@ -13,7 +13,7 @@ test("runner claims next runnable phase from non-terminal cycles", async () => {
       request: "done cycle",
       repo_root: repoRoot,
       constraints: [],
-      phases: ["BACKEND"]
+      phases: ["FRONTEND"]
     });
     doneCycle.status = "DONE";
     doneCycle.current_phase_index = null;
@@ -22,7 +22,7 @@ test("runner claims next runnable phase from non-terminal cycles", async () => {
       request: "runnable cycle",
       repo_root: repoRoot,
       constraints: [],
-      phases: ["BACKEND"]
+      phases: ["FRONTEND"]
     });
 
     await writeCycle(repoRoot, doneCycle);
@@ -32,6 +32,25 @@ test("runner claims next runnable phase from non-terminal cycles", async () => {
     assert.ok(claimed);
     assert.equal(claimed?.cycle_id, runnableCycle.id);
     assert.equal(claimed?.phase_index, 0);
+  } finally {
+    await cleanupDir(repoRoot);
+  }
+});
+
+test("runner skips manual BACKEND phases", async () => {
+  const repoRoot = await createTempRepo("synapse-runner-skip-manual-");
+  try {
+    const manualCycle = createCycleSpec({
+      request: "manual backend cycle",
+      repo_root: repoRoot,
+      constraints: [],
+      phases: ["BACKEND"]
+    });
+
+    await writeCycle(repoRoot, manualCycle);
+
+    const claimed = await claimNextRunnablePhase(repoRoot, "runner-test");
+    assert.equal(claimed, null);
   } finally {
     await cleanupDir(repoRoot);
   }

@@ -18,18 +18,26 @@ test("runner emits phase.progress logs during long-running phase execution", asy
         FRONTEND_TWEAK: false
       },
       adapters: {
-        codexExec: {
-          command: "node -e \"setTimeout(() => { console.log('ok'); }, 450)\"",
-          require_marker: false
+        gemini: {
+          mode: "cli",
+          command: `node -e ${JSON.stringify([
+            "setTimeout(() => {",
+            "console.log('working');",
+            "console.log('SYNAPSE_RESULT_JSON_BEGIN');",
+            "console.log(JSON.stringify({ file_ops: [{ path: 'frontend.txt', action: 'write', content: 'ok' }], report: { summary: 'done', files_modified: ['frontend.txt'] }, frontend_tweak_required: false }));",
+            "console.log('SYNAPSE_RESULT_JSON_END');",
+            "}, 450);"
+          ].join(" "))}`,
+          require_marker: true
         }
       }
     });
 
     const orchestrated = await synapseOrchestrate({
-      request: "Slow backend phase for progress logging test",
+      request: "Slow frontend phase for progress logging test",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 

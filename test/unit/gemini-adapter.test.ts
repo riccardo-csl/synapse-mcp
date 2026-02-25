@@ -40,10 +40,6 @@ function baseConfig(
         stream_output_to_runner: false,
         stream_output_to_synapse_logs: false,
         ...geminiOverrides
-      },
-      codexExec: {
-        command: "codex exec",
-        require_marker: false
       }
     },
     locks: {

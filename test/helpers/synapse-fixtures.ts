@@ -52,10 +52,6 @@ export async function writeSynapseConfig(
         max_repair_attempts: 1,
         stream_output_to_runner: false,
         stream_output_to_synapse_logs: false
-      },
-      codexExec: {
-        command: "node -e \"require('fs').writeFileSync('backend.txt','ok')\"",
-        require_marker: false
       }
     },
     locks: {

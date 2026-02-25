@@ -31,10 +31,6 @@ export const DEFAULT_RUNNER_CONFIG: RunnerConfig = {
       max_repair_attempts: 1,
       stream_output_to_runner: false,
       stream_output_to_synapse_logs: false
-    },
-    codexExec: {
-      command: "codex exec",
-      require_marker: false
     }
   },
   locks: {
@@ -73,10 +69,6 @@ function mergeRunnerConfig(current: unknown): RunnerConfig {
       gemini: {
         ...DEFAULT_RUNNER_CONFIG.adapters.gemini,
         ...(source.adapters?.gemini || {})
-      },
-      codexExec: {
-        ...DEFAULT_RUNNER_CONFIG.adapters.codexExec,
-        ...(source.adapters?.codexExec || {})
       }
     },
     locks: {

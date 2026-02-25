@@ -5,15 +5,15 @@ import { synapseOrchestrate, synapseStatus } from "../../lib/synapse/service.js"
 import { runCycle } from "../../lib/runner/index.js";
 import { cleanupDir, createTempRepo, writeSynapseConfig } from "../helpers/synapse-fixtures.js";
 
-test("optional true e2e: runner executes a real backend command", async (t) => {
+test("optional true e2e: runner executes a real Gemini frontend command", async (t) => {
   if (process.env.E2E !== "1") {
     t.skip("Set E2E=1 to run optional e2e tests");
     return;
   }
 
-  const backendCmd = process.env.E2E_CODEX_CMD;
-  if (!backendCmd) {
-    t.skip("Set E2E_CODEX_CMD to a real backend command (for example: codex exec)");
+  const geminiCmd = process.env.E2E_GEMINI_CMD;
+  if (!geminiCmd) {
+    t.skip("Set E2E_GEMINI_CMD to a real Gemini CLI command");
     return;
   }
 
@@ -21,8 +21,9 @@ test("optional true e2e: runner executes a real backend command", async (t) => {
   try {
     await writeSynapseConfig(repoRoot, {
       adapters: {
-        codexExec: {
-          command: backendCmd,
+        gemini: {
+          mode: "cli",
+          command: geminiCmd,
           require_marker: false
         }
       },
@@ -39,10 +40,10 @@ test("optional true e2e: runner executes a real backend command", async (t) => {
     });
 
     const orchestrated = await synapseOrchestrate({
-      request: "Implement backend feature",
+      request: "Implement frontend feature",
       repo_root: repoRoot,
       plan: {
-        phases: ["BACKEND"]
+        phases: ["FRONTEND"]
       }
     });
 

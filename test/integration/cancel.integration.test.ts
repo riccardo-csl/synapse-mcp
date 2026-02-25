@@ -8,13 +8,7 @@ import { cleanupDir, createTempRepo, writeSynapseConfig } from "../helpers/synap
 test("canceled cycle is not executed by runner", async () => {
   const repoRoot = await createTempRepo("synapse-cancel-");
   try {
-    await writeSynapseConfig(repoRoot, {
-      adapters: {
-        codexExec: {
-          command: "node -e \"require('fs').writeFileSync('should-not-exist.txt','x')\""
-        }
-      }
-    });
+    await writeSynapseConfig(repoRoot, {});
 
     const orchestrated = await synapseOrchestrate({
       request: "Implement backend then cancel",
