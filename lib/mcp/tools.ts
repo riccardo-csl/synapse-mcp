@@ -86,6 +86,19 @@ export const toolDefinitions = [
     }
   },
   {
+    name: "synapse.render_backend_completion_template",
+    description: "Render a ready-to-fill payload template for synapse.phase.complete_manual (manual BACKEND phase).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cycle_id: { type: "string" },
+        phase_id: { type: "string" },
+        repo_root: { type: "string" }
+      },
+      required: ["cycle_id"]
+    }
+  },
+  {
     name: "synapse.phase.start_manual",
     description: "Start an orchestrator-controlled manual phase (currently BACKEND only).",
     inputSchema: {

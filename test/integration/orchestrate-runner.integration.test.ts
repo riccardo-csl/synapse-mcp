@@ -38,6 +38,10 @@ test("orchestrate + runner waits for manual BACKEND phase and orchestrator compl
     assert.equal(status.status, "QUEUED");
     assert.equal(status.phases[0].status, "PENDING");
     assert.equal(status.phases[0].control_mode, "ORCHESTRATOR");
+    assert.equal(status.current_phase?.id, status.phases[0].id);
+    assert.equal(status.current_phase?.control_mode, "ORCHESTRATOR");
+    assert.equal(status.manual_backend?.phase_id, status.phases[0].id);
+    assert.equal(status.manual_backend?.status, "PENDING");
 
     const phaseId = status.phases[0].id;
     await synapsePhaseStartManual({
@@ -85,6 +89,9 @@ test("orchestrate + runner waits for manual BACKEND phase and orchestrator compl
     status = await synapseStatus({ cycle_id: orchestrated.cycle_id, repo_root: repoRoot });
     assert.equal(status.status, "DONE");
     assert.equal(status.phases[0].status, "DONE");
+    assert.equal(status.manual_backend?.summary, "backend complete");
+    assert.equal(status.manual_backend?.frontend_tweak_required, false);
+    assert.equal(status.manual_backend?.files_modified_count, 1);
 
     const backendFile = await fs.readFile(path.join(repoRoot, "backend.txt"), "utf8");
     assert.equal(backendFile, "ok");

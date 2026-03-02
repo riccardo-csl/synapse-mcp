@@ -24,6 +24,63 @@ function isTerminalCycleStatus(status: string): boolean {
   return status === "DONE" || status === "FAILED" || status === "CANCELED";
 }
 
+function phaseControlMode(phase: { input?: Record<string, unknown> | null } | undefined): "RUNNER" | "ORCHESTRATOR" | null {
+  const mode = phase && phase.input && typeof phase.input === "object"
+    ? (phase.input as Record<string, unknown>).control_mode
+    : null;
+  return mode === "RUNNER" || mode === "ORCHESTRATOR" ? mode : null;
+}
+
+function summarizeCurrentPhase(cycle: Awaited<ReturnType<typeof readCycle>>) {
+  if (typeof cycle.current_phase_index !== "number") {
+    return null;
+  }
+  const phase = cycle.phases[cycle.current_phase_index];
+  if (!phase) {
+    return null;
+  }
+  return {
+    id: phase.id,
+    type: phase.type,
+    status: phase.status,
+    attempt_count: phase.attempt_count,
+    max_attempts: phase.max_attempts,
+    control_mode: phaseControlMode(phase) || undefined,
+    started_at: phase.started_at,
+    finished_at: phase.finished_at
+  };
+}
+
+function summarizeManualBackend(cycle: Awaited<ReturnType<typeof readCycle>>) {
+  const backend = cycle.phases.find((phase) => phase.type === "BACKEND" && phaseControlMode(phase) === "ORCHESTRATOR");
+  if (!backend) {
+    return null;
+  }
+  const output = (backend.output && typeof backend.output === "object") ? backend.output as Record<string, unknown> : null;
+  const report = output && typeof output.report === "object" ? output.report as Record<string, unknown> : null;
+  const filesModified = Array.isArray(report?.files_modified) ? report?.files_modified as unknown[] : [];
+  const checksRun = Array.isArray(report?.checks_run) ? report?.checks_run as unknown[] : [];
+  const changedFiles = Array.isArray(output?.changed_files) ? output?.changed_files as unknown[] : [];
+  const summary = typeof report?.summary === "string" ? report.summary : null;
+  const frontendTweakRequired = typeof output?.frontend_tweak_required === "boolean"
+    ? output.frontend_tweak_required
+    : null;
+
+  return {
+    phase_id: backend.id,
+    status: backend.status,
+    control_mode: "ORCHESTRATOR" as const,
+    attempt_count: backend.attempt_count,
+    started_at: backend.started_at,
+    finished_at: backend.finished_at,
+    summary,
+    frontend_tweak_required: frontendTweakRequired,
+    files_modified_count: filesModified.length,
+    checks_run_count: checksRun.length,
+    changed_files_count: changedFiles.length
+  };
+}
+
 export async function startRunner(options: RunnerStartOptions = {}): Promise<void> {
   const repoRoot = resolveRepoRoot(options.repoRoot);
   const once = Boolean(options.once);
@@ -173,7 +230,30 @@ export async function report(cycleId: string, repoRootArg?: string): Promise<{
   cycle_id: string;
   status: string;
   current_phase_index: number | null;
-  phases: Array<{ id: string; type: string; status: string; attempts: number; max_attempts: number; started_at: string | null; finished_at: string | null }>;
+  phases: Array<{ id: string; type: string; status: string; attempts: number; max_attempts: number; started_at: string | null; finished_at: string | null; control_mode?: "RUNNER" | "ORCHESTRATOR" }>;
+  current_phase?: {
+    id: string;
+    type: string;
+    status: string;
+    attempt_count: number;
+    max_attempts: number;
+    control_mode?: "RUNNER" | "ORCHESTRATOR";
+    started_at: string | null;
+    finished_at: string | null;
+  } | null;
+  manual_backend?: {
+    phase_id: string;
+    status: string;
+    control_mode?: "ORCHESTRATOR";
+    attempt_count: number;
+    started_at: string | null;
+    finished_at: string | null;
+    summary?: string | null;
+    frontend_tweak_required?: boolean | null;
+    files_modified_count?: number;
+    checks_run_count?: number;
+    changed_files_count?: number;
+  } | null;
   artifacts: {
     changed_files_count: number;
     commands_run_count: number;
@@ -211,9 +291,12 @@ export async function report(cycleId: string, repoRootArg?: string): Promise<{
       status: p.status,
       attempts: p.attempt_count,
       max_attempts: p.max_attempts,
+      control_mode: phaseControlMode(p) || undefined,
       started_at: p.started_at,
       finished_at: p.finished_at
     })),
+    current_phase: summarizeCurrentPhase(cycle),
+    manual_backend: summarizeManualBackend(cycle),
     artifacts: {
       changed_files_count: cycle.artifacts.changed_files.length,
       commands_run_count: cycle.artifacts.commands_run.length,

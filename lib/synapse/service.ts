@@ -27,11 +27,14 @@ import {
   orchestrateInputSchema,
   orchestrateOutputSchema,
   parseOrSchemaError,
+  renderBackendCompletionTemplateInputSchema,
+  renderBackendCompletionTemplateOutputSchema,
   renderPromptInputSchema,
   renderPromptOutputSchema,
   statusInputSchema,
   statusOutputSchema
 } from "./schemas.js";
+import type { CycleSpec, PhaseSpec } from "./types.js";
 
 function resolveRepoRoot(repoRoot?: string): string {
   return path.resolve(repoRoot || process.cwd());
@@ -56,6 +59,124 @@ function nextPhaseIdFromCurrent(cycle: Awaited<ReturnType<typeof readCycle>>): s
     return null;
   }
   return cycle.phases[cycle.current_phase_index]?.id || null;
+}
+
+function phaseControlMode(phase: PhaseSpec): "RUNNER" | "ORCHESTRATOR" | null {
+  const mode = phase.input?.control_mode;
+  return mode === "RUNNER" || mode === "ORCHESTRATOR" ? mode : null;
+}
+
+function summarizeCurrentPhase(cycle: CycleSpec) {
+  if (typeof cycle.current_phase_index !== "number") {
+    return null;
+  }
+  const phase = cycle.phases[cycle.current_phase_index];
+  if (!phase) {
+    return null;
+  }
+  const control_mode = phaseControlMode(phase);
+  return {
+    id: phase.id,
+    type: phase.type,
+    status: phase.status,
+    attempt_count: phase.attempt_count,
+    max_attempts: phase.max_attempts,
+    ...(control_mode ? { control_mode } : {}),
+    started_at: phase.started_at,
+    finished_at: phase.finished_at
+  };
+}
+
+function summarizeManualBackend(cycle: CycleSpec) {
+  const backend = cycle.phases.find((p) => p.type === "BACKEND");
+  if (!backend) {
+    return null;
+  }
+  const control_mode = phaseControlMode(backend);
+  const output = (backend.output && typeof backend.output === "object") ? backend.output as Record<string, any> : null;
+  const report = (output?.report && typeof output.report === "object") ? output.report as Record<string, any> : null;
+  const files_modified = Array.isArray(report?.files_modified) ? report!.files_modified : [];
+  const checks_run = Array.isArray(report?.checks_run) ? report!.checks_run : [];
+  const changed_files = Array.isArray(output?.changed_files) ? output!.changed_files : [];
+
+  return {
+    phase_id: backend.id,
+    status: backend.status,
+    ...(control_mode ? { control_mode } : {}),
+    attempt_count: backend.attempt_count,
+    started_at: backend.started_at,
+    finished_at: backend.finished_at,
+    summary: typeof report?.summary === "string" ? report.summary : null,
+    frontend_tweak_required: typeof output?.frontend_tweak_required === "boolean" ? output.frontend_tweak_required : null,
+    files_modified_count: files_modified.length,
+    checks_run_count: checks_run.length,
+    changed_files_count: changed_files.length
+  };
+}
+
+function backendPhaseTemplate(cycle: CycleSpec, requestedPhaseId?: string | null) {
+  const candidates = cycle.phases.filter((p) => p.type === "BACKEND");
+  if (candidates.length === 0) {
+    throw synapseError("INVALID_PHASE", "cycle has no BACKEND phase", { cycle_id: cycle.id });
+  }
+  const phase = requestedPhaseId
+    ? candidates.find((p) => p.id === requestedPhaseId)
+    : (typeof cycle.current_phase_index === "number" ? cycle.phases[cycle.current_phase_index] : candidates[0]);
+
+  if (!phase || phase.type !== "BACKEND") {
+    throw synapseError("INVALID_PHASE", "target phase is not BACKEND", {
+      cycle_id: cycle.id,
+      phase_id: requestedPhaseId || null
+    });
+  }
+
+  const control_mode = phaseControlMode(phase);
+  if (control_mode !== "ORCHESTRATOR") {
+    throw synapseError("INVALID_PHASE", "BACKEND phase is not orchestrator-controlled", {
+      cycle_id: cycle.id,
+      phase_id: phase.id,
+      control_mode
+    });
+  }
+
+  const notes: string[] = [];
+  if (cycle.current_phase_index === null || cycle.phases[cycle.current_phase_index]?.id !== phase.id) {
+    notes.push("This BACKEND phase is not the current phase. Confirm phase ordering before completing it.");
+  }
+  if (phase.status === "PENDING") {
+    notes.push("Call synapse.phase.start_manual before synapse.phase.complete_manual.");
+  }
+  if (phase.status === "RUNNING") {
+    notes.push("Fill report/checks accurately, then call synapse.phase.complete_manual.");
+  }
+
+  return {
+    cycle_id: cycle.id,
+    phase_id: phase.id,
+    current_phase_status: phase.status,
+    tool: "synapse.phase.complete_manual" as const,
+    input_template: {
+      cycle_id: cycle.id,
+      phase_id: phase.id,
+      repo_root: cycle.repo_root,
+      output: {
+        report: {
+          summary: "Describe backend changes implemented in this manual phase",
+          files_modified: [],
+          checks_run: [],
+          checks_results: [],
+          notes: []
+        },
+        changed_files: [],
+        frontend_tweak_required: false,
+        api_contract: {
+          endpoints: [],
+          data_shapes: []
+        }
+      }
+    },
+    notes
+  };
 }
 
 export async function synapseOrchestrate(args: unknown = {}) {
@@ -98,7 +219,9 @@ export async function synapseStatus(args: unknown = {}) {
     canceled_reason: cycle.canceled_reason,
     repo_root: cycle.repo_root,
     request: cycle.request_text,
-    artifacts: cycle.artifacts
+    artifacts: cycle.artifacts,
+    current_phase: summarizeCurrentPhase(cycle),
+    manual_backend: summarizeManualBackend(cycle)
   }, "Invalid synapse.status output");
 }
 
@@ -298,4 +421,20 @@ export async function synapseRenderPrompt(args: unknown = {}) {
   return parseOrSchemaError(renderPromptOutputSchema, {
     snippet: `${request}. Use synapse-mcp orchestration: call synapse.orchestrate with this request and follow synapse.status until DONE/FAILED.`
   }, "Invalid synapse.render_prompt output");
+}
+
+export async function synapseRenderBackendCompletionTemplate(args: unknown = {}) {
+  const input = parseOrSchemaError(
+    renderBackendCompletionTemplateInputSchema,
+    args,
+    "Invalid synapse.render_backend_completion_template input"
+  );
+  const repo_root = resolveRepoRoot(input.repo_root);
+  const cycle = await readCycle(repo_root, input.cycle_id);
+  const payload = backendPhaseTemplate(cycle, input.phase_id || null);
+  return parseOrSchemaError(
+    renderBackendCompletionTemplateOutputSchema,
+    payload,
+    "Invalid synapse.render_backend_completion_template output"
+  );
 }

@@ -6,6 +6,7 @@ import {
   synapsePhaseCompleteManual,
   synapsePhaseFailManual,
   synapsePhaseStartManual,
+  synapseRenderBackendCompletionTemplate,
   synapseRenderPrompt,
   synapseStatus
 } from "../synapse/service.js";
@@ -17,6 +18,7 @@ const TOOL_HANDLERS: Record<string, (args: any) => Promise<any>> = {
   "synapse.cancel": synapseCancel,
   "synapse.list": synapseList,
   "synapse.render_prompt": synapseRenderPrompt,
+  "synapse.render_backend_completion_template": synapseRenderBackendCompletionTemplate,
   "synapse.phase.start_manual": synapsePhaseStartManual,
   "synapse.phase.complete_manual": synapsePhaseCompleteManual,
   "synapse.phase.fail_manual": synapsePhaseFailManual

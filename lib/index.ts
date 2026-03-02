@@ -7,6 +7,7 @@ import {
   synapsePhaseCompleteManual,
   synapsePhaseFailManual,
   synapsePhaseStartManual,
+  synapseRenderBackendCompletionTemplate,
   synapseRenderPrompt,
   synapseStatus
 } from "./synapse/service.js";
@@ -23,6 +24,7 @@ export {
   synapsePhaseStartManual,
   synapsePhaseCompleteManual,
   synapsePhaseFailManual,
+  synapseRenderBackendCompletionTemplate,
   synapseRenderPrompt,
   startRunner,
   runCycle,

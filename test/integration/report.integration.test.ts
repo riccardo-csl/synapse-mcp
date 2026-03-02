@@ -48,6 +48,12 @@ test("runner report summarizes a completed cycle", async () => {
     assert.equal(summary.cycle_id, orchestrated.cycle_id);
     assert.equal(summary.phases.length, 1);
     assert.equal(summary.phases[0].status, "DONE");
+    assert.equal(summary.phases[0].control_mode, "ORCHESTRATOR");
+    assert.equal(summary.current_phase, null);
+    assert.equal(summary.manual_backend?.phase_id, phaseId);
+    assert.equal(summary.manual_backend?.status, "DONE");
+    assert.equal(summary.manual_backend?.summary, "manual backend done");
+    assert.equal(summary.manual_backend?.frontend_tweak_required, false);
     assert.equal(typeof summary.artifacts.commands_run_count, "number");
     assert.equal(Array.isArray(summary.events), true);
     assert.equal(summary.events.length > 0, true);

@@ -226,6 +226,12 @@ export const renderPromptInputSchema = z.object({
   request: z.string().optional()
 }).strict();
 
+export const renderBackendCompletionTemplateInputSchema = z.object({
+  cycle_id: z.string().min(1),
+  phase_id: z.string().min(1).optional(),
+  repo_root: z.string().optional()
+}).strict();
+
 export const phaseSummarySchema = z.object({
   id: z.string(),
   type: phaseTypeSchema,
@@ -256,7 +262,30 @@ export const statusOutputSchema = z.object({
   canceled_reason: z.string().nullable(),
   repo_root: z.string(),
   request: z.string(),
-  artifacts: cycleArtifactsSchema
+  artifacts: cycleArtifactsSchema,
+  current_phase: z.object({
+    id: z.string(),
+    type: phaseTypeSchema,
+    status: phaseStatusSchema,
+    attempt_count: z.number().int().nonnegative(),
+    max_attempts: z.number().int().positive(),
+    control_mode: phaseControlModeSchema.optional(),
+    started_at: isoDateSchema.nullable(),
+    finished_at: isoDateSchema.nullable()
+  }).nullable().optional(),
+  manual_backend: z.object({
+    phase_id: z.string(),
+    status: phaseStatusSchema,
+    control_mode: phaseControlModeSchema.optional(),
+    attempt_count: z.number().int().nonnegative(),
+    started_at: isoDateSchema.nullable(),
+    finished_at: isoDateSchema.nullable(),
+    summary: z.string().nullable().optional(),
+    frontend_tweak_required: z.boolean().nullable().optional(),
+    files_modified_count: z.number().int().nonnegative().optional(),
+    checks_run_count: z.number().int().nonnegative().optional(),
+    changed_files_count: z.number().int().nonnegative().optional()
+  }).nullable().optional()
 }).strict();
 
 export const logsOutputSchema = z.object({
@@ -306,6 +335,15 @@ export const renderPromptOutputSchema = z.object({
   snippet: z.string().min(1)
 }).strict();
 
+export const renderBackendCompletionTemplateOutputSchema = z.object({
+  cycle_id: z.string(),
+  phase_id: z.string(),
+  current_phase_status: phaseStatusSchema,
+  tool: z.literal("synapse.phase.complete_manual"),
+  input_template: manualPhaseCompleteInputSchema,
+  notes: z.array(z.string())
+}).strict();
+
 export const geminiFileOpSchema = z.object({
   path: z.string().min(1),
   action: z.enum(["write", "delete"]),
@@ -341,11 +379,6 @@ export const geminiAdapterOutputSchema = z.object({
     }
   }
 });
-
-export const codexStructuredOutputSchema = z.object({
-  frontend_tweak_required: z.boolean().optional(),
-  report: z.record(z.string(), z.unknown()).optional()
-}).strict();
 
 export function parseOrSchemaError<S extends z.ZodTypeAny>(schema: S, input: unknown, message: string): z.output<S> {
   const parsed = schema.safeParse(input);
